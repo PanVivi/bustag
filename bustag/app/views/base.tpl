@@ -27,8 +27,8 @@
   </button>
   <div class="collapse navbar-collapse" id="navbarNav">
     <ul class="navbar-nav">
-      <li class="nav-item {{ 'active' if path=='/' else ''}}">
-        <a class="nav-link" href="/">推荐 <span class="sr-only">(current)</span></a>
+      <li class="nav-item {{ 'active' if path in ('/', '/recommend') else ''}}">
+        <a class="nav-link" href="/recommend">推荐 <span class="sr-only">(current)</span></a>
       </li>
       <li class="nav-item {{ 'active' if path=='/tagit' else ''}}">
         <a class="nav-link" href="/tagit">打标</a>

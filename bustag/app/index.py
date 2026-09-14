@@ -79,6 +79,41 @@ def server_static(filepath):
     return static_file(filepath, root=os.path.join(dirname, 'static'))
 
 
+def _safe_redirect(url):
+    """Keep redirects on the current browser origin, including HTTPS ports."""
+    if url.startswith('http://') or url.startswith('https://'):
+        parsed = urlparse(url)
+        url = parsed.path or '/'
+        if parsed.query:
+            url += '?' + parsed.query
+        if parsed.fragment:
+            url += '#' + parsed.fragment
+    if not url.startswith('/'):
+        url = '/' + url
+    response.status = 303
+    response.set_header('Location', url)
+    return ''
+
+
+@hook('before_request')
+def _trust_proxy_origin():
+    proto = request.environ.get('HTTP_X_FORWARDED_PROTO')
+    if proto:
+        request.environ['wsgi.url_scheme'] = proto.split(',')[0].strip()
+    forwarded_host = request.environ.get('HTTP_X_FORWARDED_HOST')
+    host = (forwarded_host or request.environ.get('HTTP_HOST') or '').split(',')[0].strip()
+    forwarded_port = request.environ.get('HTTP_X_FORWARDED_PORT')
+    if host and forwarded_port and ':' not in host.split(']')[-1]:
+        host = host + ':' + forwarded_port.split(',')[0].strip()
+    if host:
+        request.environ['HTTP_HOST'] = host
+        request.environ['SERVER_NAME'] = host.rsplit(':', 1)[0].strip('[]')
+        if host.startswith('[') and ']:' in host:
+            request.environ['SERVER_PORT'] = host.rsplit(']:', 1)[-1]
+        elif host.count(':') == 1:
+            request.environ['SERVER_PORT'] = host.rsplit(':', 1)[-1]
+
+
 @hook('before_request')
 def _connect_db():
     dbconn.connect(reuse_if_open=True)
@@ -155,6 +190,7 @@ def _remove_extra_tags(item):
 
 
 @route('/')
+@route('/recommend')
 def index():
     rate_type = RATE_TYPE.SYSTEM_RATE.value
     rate_value = int(request.query.get('like', RATE_VALUE.LIKE.value))
@@ -213,7 +249,7 @@ def tag(fanhao):
     url = f'/tagit{_build_query(page, like, tag_type, tag_value)}'
     if formid:
         url += f'#{formid}'
-    redirect(url)
+    return _safe_redirect(url)
 
 
 @route('/correct/<fanhao>', method='POST')
@@ -234,10 +270,10 @@ def correct(fanhao):
     page = int(request.query.get('page', 1))
     like = int(request.query.get('like', 1))
     tag_type, tag_value = _get_tag_filter()
-    url = f'/{_build_query(page, like, tag_type, tag_value)}'
+    url = f'/recommend{_build_query(page, like, tag_type, tag_value)}'
     if formid:
         url += f'#{formid}'
-    redirect(url)
+    return _safe_redirect(url)
 
 
 @route('/model')
