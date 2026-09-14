@@ -134,6 +134,9 @@ def train():
         'recommender v2 trained: samples=%s features=%s threshold=%s',
         scores['samples'], scores['features'], scores['threshold']
     )
+
+    # Refresh old system predictions exactly once for the new model.
+    recommend(rescore_all=True)
     return models_data
 
 
@@ -157,12 +160,12 @@ def evaluate(y_test, y_pred):
     }
 
 
-def recommend():
+def recommend(rescore_all=False):
     '''
-    Score all unrated/system-rated items and persist both the binary result
-    and the continuous interest score used for ranking.
+    Score new items during normal scheduled runs. After a model retrain,
+    rescore_all=True refreshes prior system predictions once.
     '''
-    ids, X = prepare_predict_data()
+    ids, X = prepare_predict_data(include_system=rescore_all)
     if len(X) == 0:
         logger.warning('no data for recommend')
         return 0, 0
