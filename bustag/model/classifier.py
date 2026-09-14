@@ -42,9 +42,14 @@ def _min_time_weight():
     return min(1.0, max(0.05, value))
 
 
+def _load_bundle():
+    model, mlb, scores = load_model(get_data_path(MODEL_FILE))
+    return model, mlb, scores
+
+
 def load():
-    model_data = load_model(get_data_path(MODEL_FILE))
-    return model_data
+    model, _, scores = _load_bundle()
+    return model, scores
 
 
 def create_model():
@@ -59,7 +64,7 @@ def create_model():
 
 
 def predict_scores(X_test):
-    model, _ = load()
+    model, _, _ = _load_bundle()
     return model.predict_proba(X_test)[:, 1]
 
 
@@ -116,10 +121,7 @@ def train():
     model = create_model()
     model.fit(X_all, y_all, sample_weight=all_weights)
 
-    # Save v2 artefacts separately so the old KNN model remains available for rollback.
-    from bustag.model.prepare import BINARIZER_PATH
-    dump_model(get_data_path(BINARIZER_PATH), final_mlb)
-
+    # V2 is one self-contained model bundle; old KNN files remain untouched.
     scores.update({
         'model_version': MODEL_VERSION,
         'algorithm': 'Logistic Regression',
@@ -128,8 +130,8 @@ def train():
         'threshold': float('{:.2f}'.format(_threshold())),
         'half_life_days': int(_half_life_days()),
     })
-    models_data = (model, scores)
-    dump_model(get_data_path(MODEL_FILE), models_data)
+    model_bundle = (model, final_mlb, scores)
+    dump_model(get_data_path(MODEL_FILE), model_bundle)
     logger.warning(
         'recommender v2 trained: samples=%s features=%s threshold=%s',
         scores['samples'], scores['features'], scores['threshold']
@@ -137,7 +139,7 @@ def train():
 
     # Refresh old system predictions exactly once for the new model.
     recommend(rescore_all=True)
-    return models_data
+    return model, scores
 
 
 def evaluate(y_test, y_pred):
@@ -165,13 +167,17 @@ def recommend(rescore_all=False):
     Score new items during normal scheduled runs. After a model retrain,
     rescore_all=True refreshes prior system predictions once.
     '''
-    ids, X = prepare_predict_data(include_system=rescore_all)
+    model, mlb, _ = _load_bundle()
+    ids, X = prepare_predict_data(
+        include_system=rescore_all,
+        mlb=mlb,
+    )
     if len(X) == 0:
         logger.warning('no data for recommend')
         return 0, 0
 
     threshold = _threshold()
-    scores = predict_scores(X)
+    scores = model.predict_proba(X)[:, 1]
     total = len(ids)
     count = 0
 
