@@ -12,17 +12,16 @@ This branch replaces the original KNN binary filter with a lightweight personal 
 - Time-decay sample weighting (default one-year half-life, 0.25 minimum)
 - Continuous 0-1 recommendation score persisted in a separate table
 - Recommendation pages sorted by score
-- Existing SYSTEM_RATE items are rescored after retraining/download
+- Existing SYSTEM_RATE items are rescored once after retraining; scheduled downloads score only new items
 - Explicit USER_RATE rows are never overwritten
 
 ## Compatibility and rollback
 
-The V2 model uses new artifact names:
+The V2 production model is stored as one self-contained, atomically replaced bundle:
 
 - `data/model/model_v2.pkl`
-- `data/model/label_binarizer_v2.pkl`
 
-The original KNN files are left untouched. The database gains only a new `recommendation_score` table; existing tables are not altered.
+It contains the classifier, feature encoder and metrics together. The original KNN files are left untouched. The database gains only a new `recommendation_score` table; existing tables are not altered.
 
 No new Python dependencies are introduced, so the current NAS Docker image can keep Python 3.7 and the existing scikit-learn version.
 
