@@ -4,6 +4,7 @@ html parser to extract data
 import re
 from collections import namedtuple
 from requests_html import HTML
+from bustag.util import get_full_url
 from aspider.routeing import get_router
 router = get_router()
 

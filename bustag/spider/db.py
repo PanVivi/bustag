@@ -263,7 +263,8 @@ def test_save():
     LocalItem.saveit('MADM-116', '/Download/MADM-116.avi')
 
 
-def get_items(rate_type=None, rate_value=None, page=1, page_size=10):
+def get_items(rate_type=None, rate_value=None, page=1, page_size=10,
+              tag_type=None, tag_value=None):
     '''
     get required items based on some conditions
     '''
@@ -280,6 +281,12 @@ def get_items(rate_type=None, rate_value=None, page=1, page_size=10):
          .where(reduce(operator.and_, clauses))
          .order_by(Item.id.desc())
          )
+    if tag_type and tag_value:
+        tagged_items = (ItemTag.select(ItemTag.item)
+                        .join(Tag)
+                        .where((Tag.type_ == tag_type) &
+                               (Tag.value == tag_value)))
+        q = q.where(Item.fanhao.in_(tagged_items))
     total_items = q.count()
     if not page is None:
         q = q.paginate(page, page_size)
@@ -292,12 +299,12 @@ def get_items(rate_type=None, rate_value=None, page=1, page_size=10):
             item.rate_value = None
         items_list.append(item)
 
-    total_pages = (total_items + page_size - 1) // page_size
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
     page_info = (total_items, total_pages, page, page_size)
     return items_list, page_info
 
 
-def get_local_items(page=1, page_size=10):
+def get_local_items(page=1, page_size=10, tag_type=None, tag_value=None):
     '''
     get local items
     '''
@@ -306,6 +313,12 @@ def get_local_items(page=1, page_size=10):
          .where(LocalItem.path.is_null(False))
          .order_by(LocalItem.id.desc())
          )
+    if tag_type and tag_value:
+        tagged_items = (ItemTag.select(ItemTag.item)
+                        .join(Tag)
+                        .where((Tag.type_ == tag_type) &
+                               (Tag.value == tag_value)))
+        q = q.where(LocalItem.item.in_(tagged_items))
     total_items = q.count()
     if not page is None:
         q = q.paginate(page, page_size)
@@ -323,7 +336,7 @@ def get_local_items(page=1, page_size=10):
         except Exception:
             pass
 
-    total_pages = (total_items + page_size - 1) // page_size
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
     page_info = (total_items, total_pages, page, page_size)
     return items, page_info
 

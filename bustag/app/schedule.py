@@ -30,7 +30,7 @@ def download(loop, no_parse_links=False, urls=None):
         count = len(urls)
     extra_options = APP_CONFIG.get('options', {})
     options = {'no_parse_links': no_parse_links,
-               'roots': urls, 'count': count}
+               'roots': urls, 'count': count, 'max_tasks': 1, 'max_tries': 2}
     extra_options.update(options)
 
     aspider.download(loop, extra_options)

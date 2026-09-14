@@ -1,6 +1,12 @@
 % rebase('base.tpl', title='打标', path=path)
 % curr_page = page_info[2]
 <div class="container">
+% if filter_value:
+ <div class="alert alert-info py-2">
+  当前筛选：{{filter_label}} · {{filter_value}}
+  <a class="float-right" href="{{clear_url}}">清除筛选</a>
+ </div>
+% end
  <div class="row py-3">
 	<div class="col-12">
 		<ul class="nav nav-tabs">
@@ -19,10 +25,10 @@
 %#generate list of rows of items
 % i = 1
 %for item in items:
-<form id="form-{{i}}" action="/tag/{{item.fanhao}}?page={{curr_page}}&like={{like}}" method="post">
+<form id="form-{{i}}" action="/tag/{{item.fanhao}}{{query_url(curr_page)}}" method="post">
 	<div class="row py-3">
 		<div class="col-12 col-md-4">
-		<img class="img-fluid img-thumbnail coverimg" src={{item.cover_img_url}}>
+		<img class="img-fluid img-thumbnail coverimg" src="{{poster_src(item.cover_img_url)}}">
 		</div>
 
 			<div class="col-7 col-md-5">
@@ -33,12 +39,12 @@
 			<a href="{{item.url}}" target="_blank"> {{item.title[:30]}} </a>
 			<div>
 			% for t in item.tags_dict['genre']:
-			<span class="badge badge-primary">{{t}}</span>
+			<span><a class="badge badge-primary" href="{{tag_url('genre', t)}}">{{t}}</a></span>
 			% end
 			</div>
 			<div>
 			% for t in item.tags_dict['star']:
-			<span class="badge badge-warning">{{t}}</span>
+			<span><a class="badge badge-warning" href="{{tag_url('star', t)}}">{{t}}</a></span>
 			% end
 			</div>
 

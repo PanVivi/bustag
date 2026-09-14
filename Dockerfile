@@ -20,7 +20,7 @@ COPY requirements.txt .
 
 RUN mkdir /install
 
-RUN pip download --destination-directory /install -r /app/requirements.txt -i https://pypi.douban.com/simple
+RUN pip download --destination-directory /install -r /app/requirements.txt -i https://pypi.org/simple
 
 FROM python:3.7.4-slim  as release
 
@@ -28,15 +28,17 @@ COPY ./docker/sources.list .
 
 RUN mv /etc/apt/sources.list /etc/apt/sources.list.bak && mv ./sources.list /etc/apt/
 
-RUN apt-get update && apt-get -y install cron git
+RUN apt-get update && apt-get -y install cron git patch
 
 WORKDIR /app
 
 COPY --from=build /install /install
 
 COPY requirements.txt .
+COPY patches/aspider-crawling-slow.patch /app/patches/aspider-crawling-slow.patch
 
 RUN pip install --no-index --find-links=/install -r requirements.txt
+RUN patch -p1 -d /usr/local/lib/python3.7/site-packages < /app/patches/aspider-crawling-slow.patch
 
 RUN mkdir /app/docker
 

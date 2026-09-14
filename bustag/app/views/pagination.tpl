@@ -6,17 +6,17 @@
 	<div class="col-12 text-center">
 	<h6>
 	% if curr_page != 1:
-	<a href="?page=1&like={{like}}"> 第一页</a>
+	<a href="{{query_url(1)}}"> 第一页</a>
 	% end
 	% if curr_page > 1:
-	<a href="?page={{curr_page - 1}}&like={{like}}"> 上一页</a>
+	<a href="{{query_url(curr_page - 1)}}"> 上一页</a>
 	% end
 	第{{curr_page}}页
 	% if curr_page < max_page:
-	 <a href="?page={{curr_page + 1}}&like={{like}}">下一页</a>
+	 <a href="{{query_url(curr_page + 1)}}">下一页</a>
 	% end
 	% if curr_page != max_page:
-	<a href="?page={{max_page}}&like={{like}}">最后页</a>
+	<a href="{{query_url(max_page)}}">最后页</a>
 	% end
 	</h6>
 	<div>
@@ -25,7 +25,7 @@
 	跳转
 	<select id="pagenav">
 % for i in range(1, max_page+1):
-% url = '?page={}&like={}'.format(i, like)
+% url = query_url(i)
 % selected = "selected" if i == curr_page else ""
 	<option {{selected}} value="{{url}}">{{i}}</option>
 % end

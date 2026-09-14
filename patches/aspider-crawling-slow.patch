@@ -1,0 +1,11 @@
+--- a/aspider/crawling.py
++++ b/aspider/crawling.py
+@@ -295,7 +295,7 @@
+             logger.error(f'parse error: {url}')
+             logger.exception(ex)
+         finally:
+-            yield from asyncio.sleep(1)
++            yield from asyncio.sleep(4)
+             yield from response.release()
+ 
+     @asyncio.coroutine

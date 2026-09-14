@@ -1,3 +1,8 @@
+import hashlib
+import os
+import tempfile
+from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 '''
 define url routing process logic
 '''
@@ -46,6 +51,38 @@ def verify_fanhao(path, fanhao):
     return exists is None
 
 
+def prefetch_poster(url):
+    path = urlparse(url).path
+    if not path.startswith("/pics/cover/") or ".." in path or "\\" in path:
+        return False
+    cache = "/app/data/poster-cache"
+    os.makedirs(cache, mode=0o700, exist_ok=True)
+    key = hashlib.sha256(path.encode("utf-8")).hexdigest()
+    target = os.path.join(cache, key + ".img")
+    if os.path.isfile(target) and not os.path.islink(target):
+        return True
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.javbus.com/"})
+    try:
+        with urlopen(req, timeout=20) as upstream:
+            ctype = upstream.headers.get_content_type()
+            data = upstream.read(5242881)
+        if ctype not in ("image/jpeg", "image/png") or len(data) > 5242880 or not (data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG\r\n\x1a\n")):
+            return False
+        fd, temp = tempfile.mkstemp(prefix=".tmp-", dir=cache)
+        try:
+            os.chmod(temp, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temp, target)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+        return True
+    except Exception:
+        return False
+
 @router.route('/<fanhao:[\w]+-[\d]+>', verify_fanhao, no_parse_links=True)
 def process_item(text, path, fanhao):
     '''
@@ -54,6 +91,8 @@ def process_item(text, path, fanhao):
     logger.debug(f'process item {fanhao}')
     url = path
     meta, tags = parse_item(text)
+    meta["cover_img_url"] = meta.get("cover_img_url", "")
+    prefetch_poster(get_full_url(meta["cover_img_url"]))
     meta.update(url=url)
 #     logger.debug('meta keys', len(meta.keys()))
 #     logger.debug('tag count', len(tags))

@@ -2,6 +2,12 @@
 % curr_page = page_info[2]
 
 <div class="container">
+% if filter_value:
+ <div class="alert alert-info py-2">
+  当前筛选：{{filter_label}} · {{filter_value}}
+  <a class="float-right" href="{{clear_url}}">清除筛选</a>
+ </div>
+% end
  <div class="row py-3">
 	<div class="col-12">
 		<ul class="nav nav-tabs">
@@ -20,7 +26,7 @@
 %for local_item in items:
 	<div class="row py-3">
 		<div class="col-12 col-md-4">
-		<img class="img-fluid img-thumbnail coverimg" alt="点击放大" src={{local_item.item.cover_img_url}}>
+		<img class="img-fluid img-thumbnail coverimg" alt="点击放大" src="{{poster_src(local_item.item.cover_img_url)}}">
 		</div>
 
 			<div class="col-7 col-md-5">
@@ -31,12 +37,12 @@
 			<a href="{{local_item.item.url}}" target="_blank"> {{local_item.item.title[:30]}} </a>
 			<div>
 			% for t in local_item.item.tags_dict['genre']:
-			<span class="badge badge-primary">{{t}}</span>
+			<a class="badge badge-primary" href="{{tag_url('genre', t)}}">{{t}}</a>
 			% end
 			</div>
 			<div>
 			% for t in local_item.item.tags_dict['star']:
-			<span class="badge badge-warning">{{t}}</span>
+			<a class="badge badge-warning" href="{{tag_url('star', t)}}">{{t}}</a>
 			% end
 			</div>
 
