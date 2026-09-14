@@ -1,16 +1,25 @@
 '''
 persist model required files
 '''
+import os
 import pickle
 
 
 def dump_model(path, models):
     '''
-    Args:
-        models: tuple of models to save
+    Atomically replace model files so a restart during training cannot leave a
+    half-written pickle behind.
     '''
-    with open(path, 'wb') as f:
-        pickle.dump(models, f)
+    temp_path = path + '.tmp'
+    try:
+        with open(temp_path, 'wb') as f:
+            pickle.dump(models, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def load_model(path):
