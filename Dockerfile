@@ -33,9 +33,12 @@ RUN apt-get update && apt-get -y install cron git patch
 WORKDIR /app
 
 COPY --from=build /install /install
+ENV PYTHONPATH=/app/src/bustag
 
 COPY requirements.txt .
 COPY patches/aspider-crawling-slow.patch /app/patches/aspider-crawling-slow.patch
+COPY bustag /app/src/bustag/bustag
+COPY data/config.ini /app/data/config.ini
 
 RUN pip install --no-index --find-links=/install -r requirements.txt
 RUN patch -p1 -d /usr/local/lib/python3.7/site-packages < /app/patches/aspider-crawling-slow.patch

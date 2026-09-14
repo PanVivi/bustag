@@ -6,4 +6,6 @@ __pycache__
 *.pyd
 .Python
 env
-data
+data/bus.db
+data/model
+data/*.db-*
