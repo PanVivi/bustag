@@ -144,8 +144,8 @@ def prepare_data():
     return split_data(X, y)
 
 
-def build_predict_frame():
-    items = get_recommendation_candidates()
+def build_predict_frame(include_system=False):
+    items = get_recommendation_candidates(include_system=include_system)
     rows = (as_dict(item) for item in items)
     df = pd.DataFrame(rows, columns=['id', 'tags'])
     if len(df):
@@ -153,8 +153,8 @@ def build_predict_frame():
     return df
 
 
-def prepare_predict_data():
-    df = build_predict_frame()
+def prepare_predict_data(include_system=False):
+    df = build_predict_frame(include_system=include_system)
     if len(df) == 0:
         return np.array([]), np.empty((0, 0), dtype=int)
 
