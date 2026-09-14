@@ -153,11 +153,14 @@ def build_predict_frame(include_system=False):
     return df
 
 
-def prepare_predict_data(include_system=False):
+def prepare_predict_data(include_system=False, mlb=None):
     df = build_predict_frame(include_system=include_system)
     if len(df) == 0:
         return np.array([]), np.empty((0, 0), dtype=int)
 
-    mlb = load_model(get_data_path(BINARIZER_PATH))
+    # Production passes the vectorizer from the self-contained V2 bundle.
+    # Loading the standalone file remains for backwards-compatible helpers.
+    if mlb is None:
+        mlb = load_model(get_data_path(BINARIZER_PATH))
     X = mlb.transform(df.tags.values)
     return df.index.values, X
