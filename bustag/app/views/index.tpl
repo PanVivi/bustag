@@ -1,7 +1,6 @@
 % rebase('base.tpl', title='推荐', path=path, msg=msg)
 % curr_page = page_info[2]
-
-<div class="container">
+<div class="container page-wide">
 % if filter_value:
  <div class="alert alert-info py-2">
   当前筛选：{{filter_label}} · {{filter_value}}
@@ -17,47 +16,39 @@
 		<li class="nav-item">
 			<a class="nav-link {{'' if like==1 else 'active'}}" href="?like=0">不喜欢</a>
 		</li>
-		<li class="nav-item">
-		</li>
 		</ul>
 	</div>
 </div>
-%#generate list of rows of items
+<div class="item-grid">
 % i = 1
 %for item in items:
-<form id="form-{{i}}" action="/correct/{{item.fanhao}}{{query_url(curr_page)}}" method="post">
-	<div class="row py-3">
-		<div class="col-12 col-md-4">
-		<img class="img-fluid img-thumbnail coverimg" src="{{poster_src(item.cover_img_url)}}">
+<form id="form-{{i}}" class="tag-card" action="/correct/{{item.fanhao}}{{query_url(curr_page)}}" method="post">
+	<img class="img-fluid img-thumbnail coverimg" src="{{poster_src(item.cover_img_url)}}" alt="{{item.fanhao}}">
+	<div class="tag-body">
+		<div class="small text-muted">id: {{item.id}}</div>
+		<div class="small text-muted">发行日期: {{item.release_date}}</div>
+		<div class="small text-muted">添加日期: {{item.add_date}}</div>
+		<h6 class="tag-fanhao">{{item.fanhao}}</h6>
+		<a class="tag-title" href="{{item.url}}" target="_blank">{{item.title}}</a>
+		<div class="tag-badges">
+		% for t in item.tags_dict['genre']:
+			<a class="badge badge-primary" href="{{tag_url('genre', t)}}">{{t}}</a>
+		% end
 		</div>
-
-			<div class="col-7 col-md-5">
-			<div class="small text-muted">id: {{item.id}}</div>
-			<div class="small text-muted">发行日期: {{item.release_date}}</div>
-			<div class="small text-muted">添加日期: {{item.add_date}}</div>
-			<h6>{{item.fanhao}} </h6>
-			<a href="{{item.url}}" target="_blank"> {{item.title[:30]}} </a>
-			<div>
-			% for t in item.tags_dict['genre']:
-				<a class="badge badge-primary" href="{{tag_url('genre', t)}}">{{t}}</a>
-			% end
-			</div>
-			<div>
-			% for t in item.tags_dict['star']:
-				<a class="badge badge-warning" href="{{tag_url('star', t)}}">{{t}}</a>
-			% end
-			</div>
-
-			</div>
-		<div class="col-5 col-md-3  align-self-center">
-		<input type=hidden name="formid" value="form-{{i}}">
-		<button type="submit" name="submit" class="btn btn-primary mx-2" value="1">正确</button>
-		<button type="submit" name="submit" class="btn btn-danger" value="0">错误</button>
+		<div class="tag-badges">
+		% for t in item.tags_dict['star']:
+			<a class="badge badge-warning" href="{{tag_url('star', t)}}">{{t}}</a>
+		% end
+		</div>
+		<div class="tag-actions">
+			<input type=hidden name="formid" value="form-{{i}}">
+			<button type="submit" name="submit" class="btn btn-primary btn-sm" value="1">正确</button>
+			<button type="submit" name="submit" class="btn btn-danger btn-sm" value="0">错误</button>
 		</div>
 	</div>
-	</form>
+</form>
 % i = i + 1
 %end
+</div>
 % include('pagination.tpl', page_info=page_info)
-
 </div>

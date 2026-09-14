@@ -1,4 +1,3 @@
-<%print(path)%>
 <!doctype html>
 <html lang="en">
   <head>
@@ -11,17 +10,20 @@
     <!-- Bootstrap CSS -->
 	<link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css">
 
-	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css">
+	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=queue1">
 
     <title>{{title or ''}}</title>
   </head>
-  <body>
+  <body class="layout-{{bustag_layout}}">
 
 <div class="container">
   <div class="row">
     <div class="col-12">
 	<nav class="navbar navbar-expand-lg navbar-light bg-light">
   <a class="navbar-brand" href="/"><img src="/static/images/logo.png" width="140"></a>
+% next_layout = 'single' if bustag_layout == 'double' else 'double'
+% layout_label = '切单排' if bustag_layout == 'double' else '切双排'
+  <a class="btn btn-sm btn-outline-secondary layout-toggle mr-2" href="#" data-layout-target="{{next_layout}}">{{layout_label}}</a>
   <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
     <span class="navbar-toggler-icon"></span>
   </button>
@@ -41,6 +43,9 @@
       </li>
       <li class="nav-item {{ 'active' if path=='/load_db' else ''}}">
         <a class="nav-link" href="/load_db">数据</a>
+      </li>
+      <li class="nav-item {{ 'active' if path=='/settings' else ''}}">
+        <a class="nav-link" href="/settings">设置</a>
       </li>
       <li class="nav-item {{ 'active' if path=='/about' else ''}}">
         <a class="nav-link" href="/about">关于</a>
@@ -102,7 +107,6 @@
    	<script type="text/javascript" src="/static/js/jquery.min.js"></script>
 	<script type="text/javascript" src="/static/js/popper.min.js"></script>
 	<script type="text/javascript" src="/static/js/bootstrap.min.js"></script>
-	<script type="text/javascript" src="/static/js/bustag.js"></script>
+	<script type="text/javascript" src="/static/js/bustag.js?v=layout-port2"></script>
   </body>
 </html>
-
