@@ -344,17 +344,23 @@ def get_items(rate_type=None, rate_value=None, page=1, page_size=10,
     return items_list, page_info
 
 
-def get_recommendation_candidates():
+def get_recommendation_candidates(include_system=False):
     '''
-    Return items that are safe for automatic scoring: new items plus previous
-    system predictions. Explicit USER_RATE rows are never returned.
+    Return items that are safe for automatic scoring.
+    Normal scheduled runs score only new items; a model retrain can request a
+    one-time refresh of previous SYSTEM_RATE predictions.
     '''
+    if include_system:
+        rate_clause = (
+            ItemRate.rate_type.is_null() |
+            (ItemRate.rate_type == RATE_TYPE.SYSTEM_RATE.value)
+        )
+    else:
+        rate_clause = ItemRate.rate_type.is_null()
+
     q = (Item.select(Item, ItemRate)
          .join(ItemRate, JOIN.LEFT_OUTER, attr='item_rate')
-         .where(
-             ItemRate.rate_type.is_null() |
-             (ItemRate.rate_type == RATE_TYPE.SYSTEM_RATE.value)
-         )
+         .where(rate_clause)
          .order_by(Item.id.desc()))
 
     items_list = []
