@@ -8,7 +8,7 @@ import tempfile
 import bottle
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urljoin, urlparse
-from bustag.util import APP_CONFIG
+from bustag.util import APP_CONFIG, get_now_time
 from multiprocessing import freeze_support
 from bottle import route, run, template, static_file, request, response, redirect, hook
 
@@ -205,6 +205,7 @@ def tag(fanhao):
             logger.debug(f'add new item_rate for fanhao:{fanhao}')
         else:
             item_rate.rate_value = rate_value
+            item_rate.rete_time = get_now_time()
             item_rate.save()
             logger.debug(f'updated item_rate for fanhao:{fanhao}')
     page = int(request.query.get('page', 1))
@@ -228,6 +229,7 @@ def correct(fanhao):
                 rate_value = item_rate.rate_value
                 rate_value = 1 if rate_value == 0 else 0
                 item_rate.rate_value = rate_value
+            item_rate.rete_time = get_now_time()
             item_rate.save()
             logger.debug(
                 f'updated item fanhao: {fanhao}, {"and correct the rate_value" if not is_correct else ""}')

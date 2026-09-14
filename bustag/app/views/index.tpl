@@ -35,6 +35,9 @@
 			<div class="small text-muted">id: {{item.id}}</div>
 			<div class="small text-muted">发行日期: {{item.release_date}}</div>
 			<div class="small text-muted">添加日期: {{item.add_date}}</div>
+			% if getattr(item, 'recommend_score', None) is not None:
+			<div class="small"><span class="badge badge-success">推荐分数 {{int(round(item.recommend_score * 100))}}</span></div>
+			% end
 			<h6>{{item.fanhao}} </h6>
 			<a href="{{item.url}}" target="_blank"> {{item.title[:30]}} </a>
 			<div>

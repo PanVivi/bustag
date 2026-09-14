@@ -1,88 +1,208 @@
-'''
+''' 
 create classifier model and predict
 '''
-from sklearn.metrics import f1_score, recall_score, accuracy_score, precision_score, confusion_matrix
-from sklearn.neighbors import KNeighborsClassifier
-from bustag.model.prepare import prepare_data, prepare_predict_data
-from bustag.model.persist import load_model, dump_model
-from bustag.spider.db import RATE_TYPE, ItemRate
-from bustag.util import logger, get_data_path, MODEL_PATH
+from sklearn.metrics import confusion_matrix
+from sklearn.linear_model import LogisticRegression
 
-MODEL_FILE = MODEL_PATH + 'model.pkl'
+from bustag.model.prepare import (
+    build_training_frame,
+    fit_vectorizer,
+    split_frame,
+    time_decay_weights,
+    prepare_predict_data,
+)
+from bustag.model.persist import load_model, dump_model
+from bustag.spider.db import RATE_TYPE, RATE_VALUE, ItemRate, RecommendationScore
+from bustag.util import logger, get_data_path, MODEL_PATH, APP_CONFIG
+
+MODEL_FILE = MODEL_PATH + 'model_v2.pkl'
+MODEL_VERSION = 2
 MIN_TRAIN_NUM = 200
+MIN_CLASS_NUM = 10
+
+
+def _config_float(key, default):
+    try:
+        return float(APP_CONFIG.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _threshold():
+    value = _config_float('recommend.threshold', 0.50)
+    return min(0.95, max(0.05, value))
+
+
+def _half_life_days():
+    return max(1.0, _config_float('recommend.half_life_days', 365.0))
+
+
+def _min_time_weight():
+    value = _config_float('recommend.min_time_weight', 0.25)
+    return min(1.0, max(0.05, value))
+
+
+def _load_bundle():
+    model, mlb, scores = load_model(get_data_path(MODEL_FILE))
+    return model, mlb, scores
 
 
 def load():
-    model_data = load_model(get_data_path(MODEL_FILE))
-    return model_data
+    model, _, scores = _load_bundle()
+    return model, scores
 
 
 def create_model():
-    knn = KNeighborsClassifier(n_neighbors=11)
-    return knn
+    # Binary tag features work well with a regularized linear model.
+    # class_weight balances uneven like/dislike histories without new dependencies.
+    return LogisticRegression(
+        solver='liblinear',
+        class_weight='balanced',
+        max_iter=1000,
+        random_state=42,
+    )
+
+
+def predict_scores(X_test):
+    model, _, _ = _load_bundle()
+    return model.predict_proba(X_test)[:, 1]
 
 
 def predict(X_test):
-    model, _ = load()
-    y_pred = model.predict(X_test)
-    return y_pred
+    scores = predict_scores(X_test)
+    threshold = _threshold()
+    return (scores >= threshold).astype(int)
+
+
+def _check_training_data(df):
+    total = len(df)
+    if total < MIN_TRAIN_NUM:
+        raise ValueError(
+            f'训练数据不足, 无法训练模型. 需要{MIN_TRAIN_NUM}, 当前{total}'
+        )
+    counts = df['target'].astype(int).value_counts()
+    if len(counts) < 2:
+        raise ValueError('训练数据必须同时包含喜欢和不喜欢')
+    if int(counts.min()) < MIN_CLASS_NUM:
+        raise ValueError(
+            f'喜欢和不喜欢至少各需要{MIN_CLASS_NUM}条, 当前较少一类只有{int(counts.min())}条'
+        )
 
 
 def train():
+    df = build_training_frame()
+    _check_training_data(df)
+
+    # 1) Hold-out validation with stratified split.
+    train_df, test_df = split_frame(df)
+    eval_mlb, X_train = fit_vectorizer(train_df)
+    X_test = eval_mlb.transform(test_df.tags.values)
+    y_train = train_df['target'].astype(int).values
+    y_test = test_df['target'].astype(int).values
+    train_weights = time_decay_weights(
+        train_df,
+        half_life_days=_half_life_days(),
+        min_weight=_min_time_weight(),
+    )
+
+    eval_model = create_model()
+    eval_model.fit(X_train, y_train, sample_weight=train_weights)
+    y_pred = (eval_model.predict_proba(X_test)[:, 1] >= _threshold()).astype(int)
+    scores = evaluate(y_test, y_pred)
+
+    # 2) Production model is then re-fit on 100% of user-labelled data.
+    final_mlb, X_all = fit_vectorizer(df)
+    y_all = df['target'].astype(int).values
+    all_weights = time_decay_weights(
+        df,
+        half_life_days=_half_life_days(),
+        min_weight=_min_time_weight(),
+    )
     model = create_model()
-    X_train, X_test, y_train, y_test = prepare_data()
-    total = len(X_test) + len(X_train)
-    if total < MIN_TRAIN_NUM:
-        raise ValueError(f'训练数据不足, 无法训练模型. 需要{MIN_TRAIN_NUM}, 当前{total}')
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    confusion_mtx = confusion_matrix(y_test, y_pred)
-    scores = evaluate(confusion_mtx, y_test, y_pred)
-    models_data = (model, scores)
-    dump_model(get_data_path(MODEL_FILE), models_data)
-    logger.info('new model trained')
-    return models_data
+    model.fit(X_all, y_all, sample_weight=all_weights)
+
+    # V2 is one self-contained model bundle; old KNN files remain untouched.
+    scores.update({
+        'model_version': MODEL_VERSION,
+        'algorithm': 'Logistic Regression',
+        'samples': int(len(df)),
+        'features': int(len(final_mlb.classes_)),
+        'threshold': float('{:.2f}'.format(_threshold())),
+        'half_life_days': int(_half_life_days()),
+    })
+    model_bundle = (model, final_mlb, scores)
+    dump_model(get_data_path(MODEL_FILE), model_bundle)
+    logger.warning(
+        'recommender v2 trained: samples=%s features=%s threshold=%s',
+        scores['samples'], scores['features'], scores['threshold']
+    )
+
+    # Refresh old system predictions exactly once for the new model.
+    recommend(rescore_all=True)
+    return model, scores
 
 
-def evaluate(confusion_mtx, y_test, y_pred):
-    tn, fp, fn, tp = confusion_mtx.ravel()
-    # accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
+def evaluate(y_test, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred, labels=[0, 1]).ravel()
+    precision = tp / float(tp + fp) if (tp + fp) else 0.0
+    recall = tp / float(tp + fn) if (tp + fn) else 0.0
+    f1 = (
+        2.0 * precision * recall / (precision + recall)
+        if (precision + recall) else 0.0
+    )
     logger.info(f'tp: {tp}, fp: {fp}')
     logger.info(f'fn: {fn}, tn: {tn}')
-    # logger.info(f'accuracy_score: {accuracy}')
     logger.info(f'precision_score: {precision}')
     logger.info(f'recall_score: {recall}')
     logger.info(f'f1_score: {f1}')
-    model_scores = dict(precision=precision, recall=recall, f1=f1)
-    model_scores = {key: float('{:.2f}'.format(value))
-                    for key, value in model_scores.items()}
-    return model_scores
+    return {
+        'precision': float('{:.2f}'.format(precision)),
+        'recall': float('{:.2f}'.format(recall)),
+        'f1': float('{:.2f}'.format(f1)),
+    }
 
 
-def recommend():
+def recommend(rescore_all=False):
     '''
-    use trained model to recommend items
+    Score new items during normal scheduled runs. After a model retrain,
+    rescore_all=True refreshes prior system predictions once.
     '''
-    ids, X = prepare_predict_data()
+    model, mlb, _ = _load_bundle()
+    ids, X = prepare_predict_data(
+        include_system=rescore_all,
+        mlb=mlb,
+    )
     if len(X) == 0:
-        logger.warning(
-            f'no data for recommend')
-        return
-    count = 0
+        logger.warning('no data for recommend')
+        return 0, 0
+
+    threshold = _threshold()
+    scores = model.predict_proba(X)[:, 1]
     total = len(ids)
-    y_pred = predict(X)
-    for id, y in zip(ids, y_pred):
-        if y == 1:
+    count = 0
+
+    for fanhao, score in zip(ids, scores):
+        score = float(score)
+        rate_value = (
+            RATE_VALUE.LIKE.value if score >= threshold
+            else RATE_VALUE.DISLIKE.value
+        )
+        if rate_value == RATE_VALUE.LIKE.value:
             count += 1
-        rate_type = RATE_TYPE.SYSTEM_RATE
-        rate_value = y
-        item_id = id
-        item_rate = ItemRate(rate_type=rate_type,
-                             rate_value=rate_value, item_id=item_id)
-        item_rate.save()
+
+        item_rate = ItemRate.get_by_fanhao(fanhao)
+        if item_rate is None:
+            ItemRate.saveit(RATE_TYPE.SYSTEM_RATE, rate_value, fanhao)
+        elif item_rate.rate_type == RATE_TYPE.SYSTEM_RATE.value:
+            item_rate.rate_value = rate_value
+            item_rate.save()
+        else:
+            # Safety: never overwrite an explicit user judgement.
+            continue
+
+        RecommendationScore.saveit(fanhao, score)
+
     logger.warning(
-        f'predicted {total} items, recommended {count}')
+        f'predicted {total} items, recommended {count}, threshold={threshold:.2f}'
+    )
     return total, count

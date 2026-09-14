@@ -179,6 +179,29 @@ class ItemRate(BaseModel):
         return item_rate
 
 
+class RecommendationScore(BaseModel):
+    '''
+    Continuous recommender score stored separately from ItemRate so existing
+    Bustag databases do not need a destructive schema migration.
+    '''
+    item = ForeignKeyField(Item, field='fanhao',
+                           backref='recommendation_score', unique=True)
+    score = FloatField()
+    updated_at = DateTimeField(default=datetime.datetime.now)
+
+    @staticmethod
+    def saveit(fanhao, score):
+        obj = RecommendationScore.get_or_none(
+            RecommendationScore.item_id == fanhao)
+        if obj is None:
+            obj = RecommendationScore.create(item=fanhao, score=float(score))
+        else:
+            obj.score = float(score)
+            obj.updated_at = datetime.datetime.now()
+            obj.save()
+        return obj
+
+
 class LocalItem(BaseModel):
     '''
     local item table
@@ -276,20 +299,32 @@ def get_items(rate_type=None, rate_value=None, page=1, page_size=10,
         clauses.append(ItemRate.rate_type.is_null())
     if rate_value is not None:
         clauses.append(ItemRate.rate_value == rate_value)
-    q = (Item.select(Item, ItemRate)
-         .join(ItemRate, JOIN.LEFT_OUTER, attr='item_rate')
-         .where(reduce(operator.and_, clauses))
-         .order_by(Item.id.desc())
-         )
+
+    if rate_type == RATE_TYPE.SYSTEM_RATE.value:
+        q = (Item.select(Item, ItemRate, RecommendationScore)
+             .join(ItemRate, JOIN.LEFT_OUTER, attr='item_rate')
+             .switch(Item)
+             .join(RecommendationScore, JOIN.LEFT_OUTER,
+                   attr='recommendation_score_row')
+             .where(reduce(operator.and_, clauses))
+             .order_by(RecommendationScore.score.desc(), Item.id.desc()))
+    else:
+        q = (Item.select(Item, ItemRate)
+             .join(ItemRate, JOIN.LEFT_OUTER, attr='item_rate')
+             .where(reduce(operator.and_, clauses))
+             .order_by(Item.id.desc()))
+
     if tag_type and tag_value:
         tagged_items = (ItemTag.select(ItemTag.item)
                         .join(Tag)
                         .where((Tag.type_ == tag_type) &
                                (Tag.value == tag_value)))
         q = q.where(Item.fanhao.in_(tagged_items))
+
     total_items = q.count()
-    if not page is None:
+    if page is not None:
         q = q.paginate(page, page_size)
+
     items = get_tags_for_items(q)
     for item in items:
         Item.loadit(item)
@@ -297,11 +332,46 @@ def get_items(rate_type=None, rate_value=None, page=1, page_size=10,
             item.rate_value = item.item_rate.rate_value
         else:
             item.rate_value = None
+
+        score_row = getattr(item, 'recommendation_score_row', None)
+        item.recommend_score = (
+            float(score_row.score) if score_row is not None else None
+        )
         items_list.append(item)
 
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     page_info = (total_items, total_pages, page, page_size)
     return items_list, page_info
+
+
+def get_recommendation_candidates(include_system=False):
+    '''
+    Return items that are safe for automatic scoring.
+    Normal scheduled runs score only new items; a model retrain can request a
+    one-time refresh of previous SYSTEM_RATE predictions.
+    '''
+    if include_system:
+        rate_clause = (
+            ItemRate.rate_type.is_null() |
+            (ItemRate.rate_type == RATE_TYPE.SYSTEM_RATE.value)
+        )
+    else:
+        rate_clause = ItemRate.rate_type.is_null()
+
+    q = (Item.select(Item, ItemRate)
+         .join(ItemRate, JOIN.LEFT_OUTER, attr='item_rate')
+         .where(rate_clause)
+         .order_by(Item.id.desc()))
+
+    items_list = []
+    for item in get_tags_for_items(q):
+        Item.loadit(item)
+        if hasattr(item, 'item_rate'):
+            item.rate_value = item.item_rate.rate_value
+        else:
+            item.rate_value = None
+        items_list.append(item)
+    return items_list
 
 
 def get_local_items(page=1, page_size=10, tag_type=None, tag_value=None):
@@ -377,7 +447,7 @@ def get_tags_for_items(items_query):
 
 def init():
     db.connect(reuse_if_open=True)
-    db.create_tables([Item, Tag, ItemTag, ItemRate, LocalItem])
+    db.create_tables([Item, Tag, ItemTag, ItemRate, RecommendationScore, LocalItem])
 
 
 init()
