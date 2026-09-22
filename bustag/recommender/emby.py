@@ -1,5 +1,6 @@
 """Opt-in read-only Emby snapshot ingestion. No media mutation endpoints."""
 import json
+import datetime
 import os
 import time
 import uuid
@@ -39,13 +40,40 @@ class Emby:
         with build_opener(NoRedirect()).open(req, timeout=30) as response:
             return json.load(response)
 
-    def page(self, offset, size):
+    def page(self, offset, size, fields='Path,People,Genres,Tags,ProviderIds,MediaSources,OriginalTitle'):
         from urllib.parse import quote
         return self.get('/Users/' + quote(self.user_id, safe='') + '/Items', {
             'ParentId': self.library_id, 'Recursive': 'true', 'IncludeItemTypes': 'Movie',
-            'Fields': 'Path,People,Genres,Tags,ProviderIds,MediaSources,OriginalTitle',
+            'Fields': fields, 'EnableImages': 'false',
             'EnableUserData': 'true',
             'StartIndex': offset, 'Limit': size, 'SortBy': 'SortName', 'SortOrder': 'Ascending'})
+
+    def incremental_page(self, offset, size, previous):
+        """Reconcile membership each run; transfer full metadata only when changed.
+
+        Etag is optional in Emby BaseItemDto. Servers omitting it safely fall back
+        to full pages, rather than guessing unchanged metadata from a timestamp.
+        """
+        from urllib.parse import quote
+        page = self.page(offset, size, fields='')
+        if any(not item.get('Etag') for item in page['Items']):
+            return self.page(offset, size)
+        items = []
+        for brief in page['Items']:
+            old = previous.get(str(brief['Id']))
+            if old and old.get('Etag') == brief['Etag']:
+                item = dict(old)
+                # User state and current availability may change independently of
+                # metadata Etag; the current user-scoped listing wins.
+                for key in ('UserData', 'IsOffline', 'IsVirtualItem'):
+                    if key in brief:
+                        item[key] = brief[key]
+            else:
+                item = self.get('/Users/' + quote(self.user_id, safe='') + '/Items/' + quote(str(brief['Id']), safe=''))
+                if str(item.get('Id')) != str(brief['Id']):
+                    raise ValueError('Emby detail identity mismatch')
+            items.append(item)
+        return dict(page, Items=items)
 
 
 def match_work(store, item):
@@ -64,6 +92,23 @@ def match_work(store, item):
 
 
 def sync(store, client, page_size=100, pause=.1):
+    owner = uuid.uuid4().hex
+    with store.transaction():
+        store.conn.execute('BEGIN IMMEDIATE')
+        if store.meta('emby_sync_until', '') > now():
+            raise ValueError('Emby synchronization is already running')
+        store.set_meta('emby_sync_owner', owner)
+        store.set_meta('emby_sync_until', (datetime.datetime.utcnow() + datetime.timedelta(minutes=2)).isoformat())
+    try:
+        return _sync(store, client, page_size, pause, owner)
+    finally:
+        with store.transaction():
+            store.conn.execute('BEGIN IMMEDIATE')
+            if store.meta('emby_sync_owner') == owner:
+                store.set_meta('emby_sync_until', '')
+
+
+def _sync(store, client, page_size, pause, owner):
     if not 1 <= page_size <= 1000:
         raise ValueError('Invalid page size')
     try:
@@ -83,6 +128,7 @@ def sync(store, client, page_size=100, pause=.1):
     with store.transaction():
         store.conn.execute('INSERT OR IGNORE INTO library_inventory(server) VALUES (?)', (server,))
         state = store.rows('SELECT * FROM library_inventory WHERE server=?', (server,))[0]
+        reuse = bool(state['generation']) and store.meta('emby_scope:' + server) == scope
         generation = state['pending_generation']
         if not generation or store.meta('emby_scope:' + server) != scope:
             generation = uuid.uuid4().hex
@@ -90,15 +136,26 @@ def sync(store, client, page_size=100, pause=.1):
             store.conn.execute('UPDATE library_inventory SET pending_generation=?,cursor=0 WHERE server=?', (generation, server))
             store.set_meta('emby_scope:' + server, scope)
         store.set_meta('emby_url:' + server, client.base)
+    previous = {r['item_id']: json.loads(r['raw_json']) for r in store.rows(
+        'SELECT item_id,raw_json FROM media_copy WHERE server=? AND generation=?', (server, state['generation']))} if reuse else {}
     try:
         while True:
+            with store.transaction():
+                store.conn.execute('BEGIN IMMEDIATE')
+                if store.meta('emby_sync_owner') != owner:
+                    raise RuntimeError('Emby synchronization superseded')
+                store.set_meta('emby_sync_until', (datetime.datetime.utcnow() + datetime.timedelta(minutes=2)).isoformat())
             cursor = store.rows('SELECT cursor FROM library_inventory WHERE server=?', (server,))[0]['cursor']
-            page = client.page(cursor, page_size)
+            page = (client.incremental_page(cursor, page_size, previous)
+                    if reuse and hasattr(client, 'incremental_page') else client.page(cursor, page_size))
             items = page['Items']
             total = int(page['TotalRecordCount'])
             if not isinstance(items, list) or total < cursor or (not items and cursor < total):
                 raise ValueError('Incomplete Emby snapshot')
             with store.transaction():
+                store.conn.execute('BEGIN IMMEDIATE')
+                if store.meta('emby_sync_owner') != owner:
+                    raise RuntimeError('Emby synchronization superseded')
                 for item in items:
                     if not item.get('Id'):
                         raise ValueError('Missing Emby item ID')
@@ -109,6 +166,9 @@ def sync(store, client, page_size=100, pause=.1):
             time.sleep(pause)
         # Publish only a complete snapshot; a failed page never deletes old inventory.
         with store.transaction():
+            store.conn.execute('BEGIN IMMEDIATE')
+            if store.meta('emby_sync_owner') != owner:
+                raise RuntimeError('Emby synchronization superseded')
             staged = store.rows('SELECT * FROM media_stage WHERE server=?', (server,))
             if len(staged) != total:
                 raise ValueError('Library changed while paging; restart sync')
@@ -149,6 +209,9 @@ def sync(store, client, page_size=100, pause=.1):
         return {'server': server, 'items': total}
     except Exception as error:
         with store.transaction():
+            store.conn.execute('BEGIN IMMEDIATE')
+            if store.meta('emby_sync_owner') != owner:
+                raise ValueError('Emby synchronization superseded; new snapshot retained') from None
             store.conn.execute("UPDATE library_inventory SET stale=1,error='sync_failed' WHERE server=?", (server,))
             if isinstance(error, (ValueError, KeyError, TypeError)):
                 store.conn.execute('DELETE FROM media_stage WHERE server=?', (server,))

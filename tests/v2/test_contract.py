@@ -5,7 +5,7 @@ import pytest
 
 from bustag.recommender.store import Store, normalize_code
 from bustag.recommender.ranking import features, rank, collection_prototype, auxiliary_score, emby_link
-from bustag.recommender.emby import sync, match_work
+from bustag.recommender.emby import Emby, sync, match_work
 from conftest import work
 
 
@@ -206,3 +206,48 @@ def test_owned_actor_conflict_visible_for_review(store):
     pending = rank(store, 'review')
     assert pending[0]['work_id'] == wid
     assert pending[0]['media'][0]['item_id'] == '1'
+
+
+def test_emby_incremental_metadata_reuses_only_equal_etag():
+    class Incremental(Emby):
+        def __init__(self):
+            super().__init__('http://emby.invalid', 'private', 'user', 'scope')
+            self.detail = []
+
+        def page(self, offset, size, fields=None):
+            return {'Items': [{'Id': '1', 'Etag': 'same', 'UserData': {'Played': True}},
+                              {'Id': '2', 'Etag': 'changed'}], 'TotalRecordCount': 2}
+
+        def get(self, path, params=None):
+            self.detail.append(path)
+            return {'Id': '2', 'Etag': 'changed', 'Name': 'new'}
+    client = Incremental()
+    result = client.incremental_page(0, 100, {'1': {'Id': '1', 'Etag': 'same', 'Name': 'old'}})
+    assert result['Items'][0]['Name'] == 'old'
+    assert result['Items'][0]['UserData']['Played']
+    assert len(client.detail) == 1
+    assert client.detail[0].endswith('/Items/2')
+
+
+def test_emby_incremental_falls_back_if_etag_unavailable():
+    class WithoutEtag(Emby):
+        def __init__(self):
+            super().__init__('http://emby.invalid', 'private', 'user', 'scope')
+            self.calls = []
+
+        def page(self, offset, size, fields=None):
+            self.calls.append(fields)
+            return {'Items': [{'Id': '1'}], 'TotalRecordCount': 1}
+    client = WithoutEtag()
+    client.incremental_page(0, 100, {})
+    assert client.calls == ['', None]
+
+
+def test_emby_sync_rejects_overlapping_worker(store):
+    import datetime
+    with store.transaction():
+        store.set_meta('emby_sync_owner', 'other')
+        store.set_meta('emby_sync_until', (datetime.datetime.utcnow() + datetime.timedelta(minutes=1)).isoformat())
+    with pytest.raises(ValueError, match='already running'):
+        sync(store, Client([]), pause=0)
+    assert store.meta('emby_sync_owner') == 'other'
