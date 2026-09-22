@@ -198,9 +198,21 @@ class Store:
         if state not in ('like', 'dislike', 'pending'):
             raise ValueError('Unknown actor state')
         with self.transaction():
+            actor_id = self.canonical_actor(actor_id)
             old = self.rows('SELECT state FROM actor_preference WHERE actor_id=?', (actor_id,))
             self.event('actor', actor_id, old[0]['state'] if old else 'pending', state)
             self.conn.execute('INSERT OR REPLACE INTO actor_preference VALUES (?,?,?,?)', (actor_id, state, now(), 'user'))
+
+    def canonical_actor(self, actor_id):
+        seen = set()
+        while self.meta('actor_redirect:' + actor_id):
+            if actor_id in seen:
+                raise ValueError('Actor redirect cycle')
+            seen.add(actor_id)
+            actor_id = self.meta('actor_redirect:' + actor_id)
+        if not self.rows('SELECT 1 FROM actor WHERE actor_id=?', (actor_id,)):
+            raise ValueError('Unknown actor')
+        return actor_id
 
     def correct_tag(self, work_id, tag_id, enabled):
         if type(enabled) is not bool:
@@ -231,6 +243,8 @@ class Store:
             self.set_meta('media_match:' + encode([server, item_id]), work_id)
 
     def merge_actor(self, source_actor, target_actor):
+        source_actor = self.canonical_actor(source_actor)
+        target_actor = self.canonical_actor(target_actor)
         if source_actor == target_actor:
             return
         with self.transaction():
@@ -245,6 +259,7 @@ class Store:
             preferred = next((r['state'] for r in states if r['state'] != 'pending'), 'pending')
             self.conn.execute('INSERT OR REPLACE INTO actor_preference VALUES (?,?,?,?)', (target_actor, preferred, now(), 'user'))
             self.event('actor_merge', source_actor, source_actor, target_actor)
+            self.set_meta('actor_redirect:' + source_actor, target_actor)
             self.set_meta('mapping_version', int(self.meta('mapping_version')) + 1)
 
     def _import_legacy(self):

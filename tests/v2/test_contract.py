@@ -162,3 +162,47 @@ def test_failed_migration_rolls_back(tmp_path):
     assert not store.enabled()
     assert store.rows('SELECT * FROM item')[0]['unexpected'] == 'retained'
     store.close()
+
+
+def test_actor_merge_redirects_old_manual_forms(store):
+    wid, original, _ = work(store, 1)
+    with store.transaction():
+        target = store.add_actor(wid, 'other', 'b', 'b')
+    store.preference(original, 'like')
+    store.merge_actor(original, target)
+    store.preference(original, 'dislike')
+    assert store.canonical_actor(original) == target
+    assert store.rows('SELECT state FROM actor_preference WHERE actor_id=?', (target,))[0]['state'] == 'dislike'
+    assert rank(store)[0]['queue'] != 'actor_first'
+    store.merge_actor(target, original)  # canonical same identity, no redirect cycle
+    assert store.canonical_actor(original) == target
+
+
+def test_emby_metadata_replacement_preserves_observations(store):
+    wid, _, _ = work(store, 1)
+    item = media('1', 'SYN-001')
+    item['People'] = [{'Id': 'old', 'Type': 'Actor', 'Name': 'Old'}]
+    item['Tags'] = ['old']
+    client = Client([item])
+    sync(store, client, pause=0)
+    version = store.meta('mapping_version')
+    item['People'] = [{'Id': 'new', 'Type': 'Actor', 'Name': 'New'}]
+    item['Tags'] = []
+    sync(store, client, pause=0)
+    assert store.meta('mapping_version') != version
+    assert store.rows("SELECT name FROM actor a JOIN work_actor w USING(actor_id) WHERE source='emby:server'") == [{'name': 'New'}]
+    assert not store.rows("SELECT * FROM work_tag WHERE source='emby:server'")
+    assert len(store.rows("SELECT * FROM source_observation WHERE source='emby:server'")) == 2
+
+
+def test_owned_actor_conflict_visible_for_review(store):
+    wid, liked, _ = work(store, 1)
+    with store.transaction():
+        disliked = store.add_actor(wid, 'fixture', 'other', 'Other')
+    store.preference(liked, 'like')
+    store.preference(disliked, 'dislike')
+    sync(store, Client([media('1', 'SYN-001')]), pause=0)
+    assert not rank(store, 'local')
+    pending = rank(store, 'review')
+    assert pending[0]['work_id'] == wid
+    assert pending[0]['media'][0]['item_id'] == '1'

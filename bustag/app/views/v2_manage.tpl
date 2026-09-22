@@ -1,6 +1,13 @@
 % rebase('base.tpl', title='偏好与身份确认', path=path)
 <div class="container">
 <a href="/v2">返回推荐</a>
+<h5>作品人工反馈（可更正已排除的作品）</h5>
+% for work in feedback:
+<form method="post" action="/v2/feedback/{{work['work_id']}}">
+<input type="hidden" name="csrf" value="{{csrf}}">
+{{work['code'] or work['title']}} · {{'喜欢' if work['value'] else '不喜欢'}}
+<button name="value" value="1">喜欢</button><button name="value" value="0">不喜欢</button></form>
+% end
 <h5>演员人工三态</h5>
 % for actor in actors:
 <form method="post" action="/v2/actor/{{actor['actor_id']}}">

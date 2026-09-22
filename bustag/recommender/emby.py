@@ -68,6 +68,9 @@ def sync(store, client, page_size=100, pause=.1):
         raise ValueError('Invalid page size')
     try:
         public = client.get('/System/Info/Public')
+        if not public.get('Id'):
+            raise ValueError('Missing server ID')
+        server = str(public['Id'])
     except Exception:
         with store.transaction():
             # Only this configured connection's previous inventories become stale.
@@ -75,7 +78,6 @@ def sync(store, client, page_size=100, pause=.1):
                 if store.meta('emby_url:' + old['server']) == client.base:
                     store.conn.execute("UPDATE library_inventory SET stale=1,error='sync_failed' WHERE server=?", (old['server'],))
         raise ValueError('Emby sync failed; previous snapshot retained') from None
-    server = str(public['Id'])
     # A scope change cannot resume a cursor from a different library/user/server URL.
     scope = encode([client.base, client.user_id, client.library_id])
     with store.transaction():
@@ -110,8 +112,17 @@ def sync(store, client, page_size=100, pause=.1):
             staged = store.rows('SELECT * FROM media_stage WHERE server=?', (server,))
             if len(staged) != total:
                 raise ValueError('Library changed while paging; restart sync')
+            source = 'emby:' + server
+            before_actors = store.rows('SELECT * FROM work_actor WHERE source=? ORDER BY work_id,actor_id', (source,))
+            before_tags = store.rows('SELECT * FROM work_tag WHERE source=? ORDER BY work_id,category,source_id', (source,))
+            # Replace this source's current relationships, retaining raw observations
+            # and manual overrides. Removed or corrected metadata must not linger.
+            store.conn.execute('DELETE FROM work_actor WHERE source=?', (source,))
+            store.conn.execute('DELETE FROM work_tag WHERE source=?', (source,))
             for row in staged:
                 item = json.loads(row['payload'])
+                store.conn.execute('INSERT OR IGNORE INTO source_observation(source,source_id,raw_json,observed_at) VALUES (?,?,?,?)',
+                                   (source, str(item['Id']), row['payload'], now()))
                 work_id = store.meta('media_match:' + encode([server, str(item['Id'])])) or match_work(store, item)
                 code = normalize_code(item.get('OriginalTitle') or item.get('Name') or '')
                 if work_id is None and code and not store.rows('SELECT 1 FROM work_identity WHERE code=?', (code,)):
@@ -129,6 +140,10 @@ def sync(store, client, page_size=100, pause=.1):
                 store.conn.execute('INSERT OR REPLACE INTO media_copy VALUES (?,?,?,?,?,?,?,?,?)',
                                    (server, str(item['Id']), work_id, item.get('Path'), int(playable),
                                     1 if work_id else 0, generation, now(), row['payload']))
+            after_actors = store.rows('SELECT * FROM work_actor WHERE source=? ORDER BY work_id,actor_id', (source,))
+            after_tags = store.rows('SELECT * FROM work_tag WHERE source=? ORDER BY work_id,category,source_id', (source,))
+            if before_actors != after_actors or before_tags != after_tags:
+                store.set_meta('mapping_version', int(store.meta('mapping_version')) + 1)
             store.conn.execute('UPDATE library_inventory SET generation=?,synced_at=?,stale=0,pending_generation=NULL,cursor=0,error=NULL WHERE server=?', (generation, now(), server))
             store.conn.execute('DELETE FROM media_stage WHERE server=?', (server,))
         return {'server': server, 'items': total}

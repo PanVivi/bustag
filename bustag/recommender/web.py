@@ -97,10 +97,11 @@ def install(app, database, models):
         except ValueError:
             abort(400, 'Invalid page')
         with opened() as store:
-            actors = store.rows("SELECT a.*,coalesce(p.state,'pending') AS state FROM actor a LEFT JOIN actor_preference p USING(actor_id) ORDER BY a.name,a.actor_id LIMIT 50 OFFSET ?", ((page-1)*50,))
+            actors = store.rows("SELECT a.*,coalesce(p.state,'pending') AS state FROM actor a LEFT JOIN actor_preference p USING(actor_id) WHERE NOT EXISTS(SELECT 1 FROM v2_meta m WHERE m.key='actor_redirect:' || a.actor_id) ORDER BY a.name,a.actor_id LIMIT 50 OFFSET ?", ((page-1)*50,))
             tags = store.rows('SELECT s.*,c.category AS canonical_category,c.name AS canonical_name FROM source_tag s JOIN canonical_tag c USING(tag_id) ORDER BY s.source,s.category,s.source_id LIMIT 50 OFFSET ?', ((page-1)*50,))
             pending = store.rows('SELECT server,item_id FROM media_copy WHERE work_id IS NULL LIMIT 50 OFFSET ?', ((page-1)*50,))
-            return template('v2_manage', path='/v2/manage', actors=actors, tags=tags, pending=pending, csrf=CSRF, page=page)
+            feedback = store.rows('SELECT w.work_id,w.code,w.title,f.value FROM explicit_work_feedback f JOIN work_identity w USING(work_id) ORDER BY f.confirmed_at DESC,w.work_id LIMIT 50 OFFSET ?', ((page-1)*50,))
+            return template('v2_manage', path='/v2/manage', actors=actors, tags=tags, pending=pending, feedback=feedback, csrf=CSRF, page=page)
 
     @app.post('/v2/map-tag')
     def map_tag():

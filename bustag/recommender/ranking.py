@@ -77,7 +77,7 @@ def rank(store, entry='discover', limit=20, offset=0, conflict='review', explora
             continue
         copies = store.rows('''SELECT m.*,l.stale FROM media_copy m JOIN library_inventory l
            ON l.server=m.server AND l.generation=m.generation WHERE work_id=?''', (work['work_id'],))
-        if entry in ('discover', 'review') and copies:
+        if entry == 'discover' and copies:
             continue
         playable = [c for c in copies if c['playable'] and not c['stale']]
         if entry == 'local' and not playable:
