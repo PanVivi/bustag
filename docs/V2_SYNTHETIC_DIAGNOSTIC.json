@@ -1,0 +1,242 @@
+{
+  "synthetic_only": true,
+  "personal_model_acceptance": false,
+  "purpose": "Pipeline smoke diagnostic; generated separable labels do not measure personal recommendation quality.",
+  "runtime": {
+    "python": "3.10.0",
+    "numpy": "1.26.4",
+    "sklearn": "1.5.2"
+  },
+  "report": {
+    "split_seed": 42,
+    "data_time": "2026-09-22T11:16:10.206914",
+    "sample_count": 60,
+    "positive": 30,
+    "negative": 30,
+    "comparison": {
+      "legacy_knn": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      },
+      "branch_v2": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      },
+      "canonical_knn": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      },
+      "final_lr": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      }
+    },
+    "limitations": [
+      "当前元数据快照对照；不声称历史无泄漏回测。",
+      "演员状态/标签映射/收藏缺少完整历史快照时，不报告其历史因果收益。",
+      "收藏辅助默认0；真实时间点收藏快照消融通过前不得启用。"
+    ],
+    "collection_weight": 0.0,
+    "temporal": {
+      "n": 15,
+      "positive": 8,
+      "k": 10,
+      "precision_at_k": 0.8,
+      "recall_at_k": 1.0,
+      "positive_recall": 1.0,
+      "precision": 1.0,
+      "precision_at_k_wilson95": [
+        0.49015684672072335,
+        0.9433190520193067
+      ],
+      "false_positive_count": 0,
+      "false_negative_count": 0,
+      "status": "diagnostic_current_metadata_not_historical_acceptance"
+    },
+    "ablations": {
+      "without_actor": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      },
+      "without_category_normalization": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      },
+      "collection": {
+        "status": "diagnostic_only_not_authorized_for_activation",
+        "eligible_feature_count": 0,
+        "weights": {
+          "0.0": {
+            "n": 15,
+            "positive": 7,
+            "k": 10,
+            "precision_at_k": 0.7,
+            "recall_at_k": 1.0,
+            "positive_recall": 1.0,
+            "precision": 1.0,
+            "precision_at_k_wilson95": [
+              0.39677321997956516,
+              0.892210712513788
+            ],
+            "false_positive_count": 0,
+            "false_negative_count": 0
+          },
+          "0.05": {
+            "n": 15,
+            "positive": 7,
+            "k": 10,
+            "precision_at_k": 0.7,
+            "recall_at_k": 1.0,
+            "positive_recall": 1.0,
+            "precision": 1.0,
+            "precision_at_k_wilson95": [
+              0.39677321997956516,
+              0.892210712513788
+            ],
+            "false_positive_count": 0,
+            "false_negative_count": 0
+          },
+          "0.1": {
+            "n": 15,
+            "positive": 7,
+            "k": 10,
+            "precision_at_k": 0.7,
+            "recall_at_k": 1.0,
+            "positive_recall": 1.0,
+            "precision": 1.0,
+            "precision_at_k_wilson95": [
+              0.39677321997956516,
+              0.892210712513788
+            ],
+            "false_positive_count": 0,
+            "false_negative_count": 0
+          },
+          "0.2": {
+            "n": 15,
+            "positive": 7,
+            "k": 10,
+            "precision_at_k": 0.7,
+            "recall_at_k": 1.0,
+            "positive_recall": 1.0,
+            "precision": 1.0,
+            "precision_at_k_wilson95": [
+              0.39677321997956516,
+              0.892210712513788
+            ],
+            "false_positive_count": 0,
+            "false_negative_count": 0
+          }
+        }
+      },
+      "actor_priority_current_states": {
+        "status": "diagnostic_only_manual_states_have_no_historical_snapshot",
+        "precision_at_k": 0.7,
+        "liked_actor_candidates": 0,
+        "liked_actor_top_k": 0,
+        "without_priority": {
+          "n": 15,
+          "positive": 7,
+          "k": 10,
+          "precision_at_k": 0.7,
+          "recall_at_k": 1.0,
+          "positive_recall": 1.0,
+          "precision": 1.0,
+          "precision_at_k_wilson95": [
+            0.39677321997956516,
+            0.892210712513788
+          ],
+          "false_positive_count": 0,
+          "false_negative_count": 0
+        }
+      }
+    },
+    "actor_segments": {
+      "seen_actor": {
+        "n": 15,
+        "positive": 7,
+        "k": 10,
+        "precision_at_k": 0.7,
+        "recall_at_k": 1.0,
+        "positive_recall": 1.0,
+        "precision": 1.0,
+        "precision_at_k_wilson95": [
+          0.39677321997956516,
+          0.892210712513788
+        ],
+        "false_positive_count": 0,
+        "false_negative_count": 0
+      }
+    },
+    "selection": {
+      "final_lr": 1.0,
+      "canonical_knn": 1.0
+    },
+    "selected": "final_lr"
+  }
+}
