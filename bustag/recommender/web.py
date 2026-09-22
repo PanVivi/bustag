@@ -4,13 +4,19 @@ import secrets
 import sqlite3
 from contextlib import contextmanager
 
-from bottle import abort, redirect, request, template
+from bottle import abort, HTTPResponse, request, template
 
 from .store import Store
 from .ranking import emby_link, rank
 from . import jobs
 
 CSRF = secrets.token_urlsafe(32)
+
+
+def redirect(path, status=303):
+    # Preserve the browser's public HTTPS origin/port behind the NAS proxy.
+    # Bottle's absolute redirects can use the internal HTTP host instead.
+    raise HTTPResponse(status=status, headers={'Location': path})
 
 
 def install(app, database, models):

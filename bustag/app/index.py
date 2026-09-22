@@ -5,10 +5,14 @@ import sys
 import os
 import hashlib
 import tempfile
+import configparser
+import json
+import re as _re
 import bottle
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urljoin, urlparse
 from bustag.util import APP_CONFIG, get_now_time
+from bustag.app.crawl_queue import snapshot as queue_snapshot, enqueue_front, make_item
 from multiprocessing import freeze_support
 from bottle import route, run, template, static_file, request, response, redirect, hook
 
@@ -18,6 +22,7 @@ if getattr(sys, 'frozen', False):
 POSTER_CACHE = os.path.join(APP_CONFIG["download.data_path"], "poster-cache") if "download.data_path" in APP_CONFIG else "/app/data/poster-cache"
 os.makedirs(POSTER_CACHE, mode=0o700, exist_ok=True)
 POSTER_CACHE_LOCK = threading.Lock()
+bottle.BaseTemplate.defaults['bustag_layout'] = 'double'
 print('dirname:' + dirname)
 bottle.TEMPLATE_PATH.insert(0, dirname + '/views/')
 
@@ -77,6 +82,41 @@ def _list_template_args(like, tag_type, tag_value):
 def server_static(filepath):
     """Serve the packaged CSS, JavaScript, and image assets."""
     return static_file(filepath, root=os.path.join(dirname, 'static'))
+
+
+def _safe_redirect(url):
+    """Keep redirects on the current browser origin, including HTTPS ports."""
+    if url.startswith('http://') or url.startswith('https://'):
+        parsed = urlparse(url)
+        url = parsed.path or '/'
+        if parsed.query:
+            url += '?' + parsed.query
+        if parsed.fragment:
+            url += '#' + parsed.fragment
+    if not url.startswith('/'):
+        url = '/' + url
+    response.status = 303
+    response.set_header('Location', url)
+    return ''
+
+
+@hook('before_request')
+def _trust_proxy_origin():
+    proto = request.environ.get('HTTP_X_FORWARDED_PROTO')
+    if proto:
+        request.environ['wsgi.url_scheme'] = proto.split(',')[0].strip()
+    forwarded_host = request.environ.get('HTTP_X_FORWARDED_HOST')
+    host = (forwarded_host or request.environ.get('HTTP_HOST') or '').split(',')[0].strip()
+    forwarded_port = request.environ.get('HTTP_X_FORWARDED_PORT')
+    if host and forwarded_port and ':' not in host.split(']')[-1]:
+        host = host + ':' + forwarded_port.split(',')[0].strip()
+    if host:
+        request.environ['HTTP_HOST'] = host
+        request.environ['SERVER_NAME'] = host.rsplit(':', 1)[0].strip('[]')
+        if host.startswith('[') and ']:' in host:
+            request.environ['SERVER_PORT'] = host.rsplit(']:', 1)[-1]
+        elif host.count(':') == 1:
+            request.environ['SERVER_PORT'] = host.rsplit(':', 1)[-1]
 
 
 @hook('before_request')
@@ -155,9 +195,10 @@ def _remove_extra_tags(item):
 
 
 @route('/')
+@route('/recommend')
 def index():
     if _v2_enabled():
-        redirect('/v2')
+        return _safe_redirect('/v2')
     rate_type = RATE_TYPE.SYSTEM_RATE.value
     rate_value = int(request.query.get('like', RATE_VALUE.LIKE.value))
     page = int(request.query.get('page', 1))
@@ -217,7 +258,7 @@ def tag(fanhao):
     url = f'/tagit{_build_query(page, like, tag_type, tag_value)}'
     if formid:
         url += f'#{formid}'
-    redirect(url)
+    return _safe_redirect(url)
 
 
 @route('/correct/<fanhao>', method='POST')
@@ -239,16 +280,16 @@ def correct(fanhao):
     page = int(request.query.get('page', 1))
     like = int(request.query.get('like', 1))
     tag_type, tag_value = _get_tag_filter()
-    url = f'/{_build_query(page, like, tag_type, tag_value)}'
+    url = f'/recommend{_build_query(page, like, tag_type, tag_value)}'
     if formid:
         url += f'#{formid}'
-    redirect(url)
+    return _safe_redirect(url)
 
 
 @route('/model')
 def other_settings():
     if _v2_enabled():
-        redirect('/v2/status')
+        return _safe_redirect('/v2/status')
     try:
         _, model_scores = clf.load()
     except FileNotFoundError:
@@ -259,7 +300,7 @@ def other_settings():
 @route('/do-training')
 def do_training():
     if _v2_enabled():
-        redirect('/v2/status')
+        return _safe_redirect('/v2/status')
     error_msg = None
     model_scores = None
     try:
@@ -334,6 +375,148 @@ def load_db():
         else:
             errmsg = '请上传数据库文件'
     return template('load_db', path=request.path, msg=msg, errmsg=errmsg)
+
+
+FANHAO_RE = _re.compile(r'[A-Za-z]{1,10}-\d{2,6}')
+
+
+def _int_cfg(key, default):
+    try:
+        return int(APP_CONFIG.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _current_layout():
+    layout = APP_CONFIG.get('display.layout') or 'double'
+    if layout not in ('single', 'double'):
+        layout = 'double'
+    return layout
+
+
+def _save_config_section(section, values):
+    path = get_data_path('config.ini')
+    conf = configparser.ConfigParser()
+    conf.read(path)
+    if not conf.has_section(section):
+        conf.add_section(section)
+    for key, value in values.items():
+        conf.set(section, key, str(value))
+        APP_CONFIG[section + '.' + key] = str(value)
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as fh:
+        conf.write(fh)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def _save_download_config(values):
+    _save_config_section('download', values)
+
+
+def _apply_layout(layout):
+    if layout not in ('single', 'double'):
+        layout = 'double'
+    _save_config_section('display', {'layout': layout})
+    bottle.BaseTemplate.defaults['bustag_layout'] = layout
+    response.set_cookie('bustag_layout', layout, path='/', max_age=86400 * 365)
+    return layout
+
+
+def _safe_back_url():
+    nxt = request.query.get('next') or ''
+    if nxt.startswith('/') and not nxt.startswith('//'):
+        return nxt
+    referer = request.get_header('Referer') or ''
+    parsed = urlparse(referer)
+    path = parsed.path or '/tagit'
+    if not path.startswith('/') or path.startswith('//'):
+        return '/tagit'
+    if parsed.query:
+        path = path + '?' + parsed.query
+    return path
+
+
+@hook('before_request')
+def _inject_layout():
+    layout = _current_layout()
+    bottle.BaseTemplate.defaults['bustag_layout'] = layout
+
+
+@route('/settings', method=['GET', 'POST'])
+def settings():
+    msg = ''
+    errmsg = ''
+    if request.POST.submit == 'layout':
+        layout = 'double' if request.POST.layout == 'double' else 'single'
+        _apply_layout(layout)
+        msg = '显示布局已保存'
+    elif request.POST.submit == 'crawler':
+        values = {
+            'count': max(1, min(100, int(request.POST.get('count') or 20))),
+            'interval': max(3600, min(604800, int(request.POST.get('interval') or 43200))),
+            'max_tasks': max(1, min(5, int(request.POST.get('max_tasks') or 1))),
+            'delay': max(1, min(30, int(request.POST.get('delay') or 4))),
+            'daily_limit': max(1, min(500, int(request.POST.get('daily_limit') or 40))),
+        }
+        _save_download_config(values)
+        msg = '爬虫设置已保存，下一轮抓取生效'
+    elif request.POST.submit == 'fetch':
+        kind = request.POST.get('fetch_type') or 'fanhao'
+        query = (request.POST.get('fetch_query') or '').strip()
+        if not query:
+            errmsg = '请输入番号、系列或演员'
+        else:
+            root = APP_CONFIG['download.root_path'].rstrip('/')
+            urls = []
+            if kind == 'fanhao':
+                found = FANHAO_RE.findall(query.upper())
+                urls = [bus_spider.get_url_by_fanhao(item) for item in found]
+            elif kind == 'series':
+                series = query.upper()
+                matched = FANHAO_RE.match(series)
+                if matched:
+                    series = matched.group(0).split('-')[0]
+                else:
+                    series = _re.sub(r'[^A-Za-z0-9]+', '', series)
+                urls = [root + '/search/' + series]
+            else:
+                urls = [root + '/search/' + query]
+            if not urls:
+                errmsg = '没有可抓取的地址'
+            else:
+                added = enqueue_front([make_item(url, 'custom', kind) for url in urls])
+                msg = '已插入队列头部 %s 条' % added
+    layout = _current_layout()
+    return template('settings', path=request.path, msg=msg, errmsg=errmsg,
+                    layout=layout, cfg={
+                        'count': _int_cfg('download.count', 20),
+                        'interval': _int_cfg('download.interval', 43200),
+                        'max_tasks': _int_cfg('download.max_tasks', 1),
+                        'delay': _int_cfg('download.delay', 4),
+                        'daily_limit': _int_cfg('download.daily_limit', 40),
+                    })
+
+
+@route('/layout')
+def switch_layout():
+    mode = request.query.get('mode') or ''
+    if mode not in ('single', 'double'):
+        mode = 'single' if _current_layout() == 'double' else 'double'
+    _apply_layout(mode)
+    # Keep the redirect relative to the current origin.  An absolute Bottle
+    # redirect can lose the public reverse-proxy port (for example :1023).
+    response.status = 303
+    response.set_header('Location', _safe_back_url())
+    return ''
+
+
+@route('/queue.json')
+def queue_status():
+    response.content_type = 'application/json; charset=utf-8'
+    response.set_header('Cache-Control', 'no-store')
+    return json.dumps(queue_snapshot(), ensure_ascii=False)
 
 
 @route('/about')

@@ -6,3 +6,4 @@ joblib==0.13.2
 bottle==0.12.17
 pytest==7.4.4
 WebTest==3.0.0
+pytz==2019.2
