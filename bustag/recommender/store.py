@@ -166,6 +166,8 @@ class Store:
         return work_id
 
     def add_actor(self, work_id, source, source_id, name):
+        if not source_id:
+            raise ValueError('Actor source identity is required; names alone are ambiguous')
         alias = self.rows('SELECT actor_id FROM actor_alias WHERE source=? AND source_id=?', (source, source_id))
         actor_id = alias[0]['actor_id'] if alias else uuid.uuid4().hex
         self.conn.execute('INSERT OR IGNORE INTO actor VALUES (?,?,?)', (actor_id, name, int(not source_id)))
@@ -198,6 +200,7 @@ class Store:
         if state not in ('like', 'dislike', 'pending'):
             raise ValueError('Unknown actor state')
         with self.transaction():
+            self.conn.execute('BEGIN IMMEDIATE')
             actor_id = self.canonical_actor(actor_id)
             old = self.rows('SELECT state FROM actor_preference WHERE actor_id=?', (actor_id,))
             self.event('actor', actor_id, old[0]['state'] if old else 'pending', state)
@@ -224,6 +227,7 @@ class Store:
 
     def map_tag(self, source, category, source_id, canonical_id):
         with self.transaction():
+            self.conn.execute('BEGIN IMMEDIATE')
             old = self.rows('SELECT tag_id FROM source_tag WHERE source=? AND category=? AND source_id=?', (source, category, source_id))
             if not old:
                 raise ValueError('Unknown source tag')
@@ -243,11 +247,12 @@ class Store:
             self.set_meta('media_match:' + encode([server, item_id]), work_id)
 
     def merge_actor(self, source_actor, target_actor):
-        source_actor = self.canonical_actor(source_actor)
-        target_actor = self.canonical_actor(target_actor)
-        if source_actor == target_actor:
-            return
         with self.transaction():
+            self.conn.execute('BEGIN IMMEDIATE')
+            source_actor = self.canonical_actor(source_actor)
+            target_actor = self.canonical_actor(target_actor)
+            if source_actor == target_actor:
+                return
             states = self.rows('SELECT actor_id,state FROM actor_preference WHERE actor_id IN (?,?)', (source_actor, target_actor))
             if len({r['state'] for r in states if r['state'] != 'pending'}) > 1:
                 raise ValueError('Resolve conflicting manual actor states first')
@@ -266,16 +271,21 @@ class Store:
         tables = {r['name'] for r in self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
         if 'item' not in tables:
             return
+        def reference_column(table):
+            refs = self.rows('PRAGMA foreign_key_list(' + table + ')')
+            return 'id' if any(r['table'] == 'item' and r['to'] == 'id' for r in refs) else 'fanhao'
+        tag_ref = reference_column('item_tag')
+        rate_ref = reference_column('item_rate')
         for item in self.rows('SELECT * FROM item'):
             work_id = self.work('javbus', item['fanhao'], item['title'], item['fanhao'], raw=item, url=item['url'])
-            for tag in self.rows('SELECT t.* FROM tag t JOIN item_tag it ON t.id=it.tag_id WHERE it.item_id=?', (item['fanhao'],)):
+            for tag in self.rows('SELECT t.* FROM tag t JOIN item_tag it ON t.id=it.tag_id WHERE it.item_id=?', (item[tag_ref],)):
                 if tag['type'] == 'star':
                     # Missing actor IDs remain separate; never resolve by display name.
                     self.add_actor(work_id, 'javbus', tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
                 else:
                     self.add_tag(work_id, 'javbus', tag['type'], tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
         # Most recent independent work judgement wins; retain all original rows.
-        for row in self.rows('SELECT r.*,s.work_id FROM item_rate r JOIN source_item s ON s.source=\'javbus\' AND s.source_id=r.item_id WHERE rate_type=1 ORDER BY rete_time DESC,r.id DESC'):
+        for row in self.rows('SELECT r.*,s.work_id FROM item_rate r JOIN item i ON r.item_id=i.' + rate_ref + ' JOIN source_item s ON s.source=\'javbus\' AND s.source_id=i.fanhao WHERE rate_type=1 ORDER BY rete_time DESC,r.id DESC'):
             if not self.rows('SELECT 1 FROM explicit_work_feedback WHERE work_id=?', (row['work_id'],)):
                 self.conn.execute('INSERT INTO explicit_work_feedback VALUES (?,?,?,?)', (row['work_id'], row['rate_value'], row['rete_time'], 'legacy_user'))
                 self.event('work', row['work_id'], None, row['rate_value'], 'legacy_user', row['rete_time'])
@@ -286,10 +296,12 @@ class Store:
               AFTER ''' + operation + ''' ON item_rate WHEN NEW.rate_type=1 BEGIN
               INSERT INTO feedback_event(entity,entity_id,old_value,new_value,created_at,source)
                 SELECT 'work',s.work_id,NULL,CAST(NEW.rate_value AS TEXT),NEW.rete_time,'legacy_user'
-                FROM source_item s WHERE s.source='javbus' AND s.source_id=NEW.item_id;
+                FROM source_item s JOIN item i ON s.source_id=i.fanhao
+                WHERE s.source='javbus' AND i.''' + rate_ref + '''=NEW.item_id;
               INSERT OR REPLACE INTO explicit_work_feedback(work_id,value,confirmed_at,source)
                 SELECT s.work_id,NEW.rate_value,NEW.rete_time,'legacy_user'
-                FROM source_item s WHERE s.source='javbus' AND s.source_id=NEW.item_id;
+                FROM source_item s JOIN item i ON s.source_id=i.fanhao
+                WHERE s.source='javbus' AND i.''' + rate_ref + '''=NEW.item_id;
               END''')
 
     def import_legacy(self):
