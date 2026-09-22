@@ -19,6 +19,7 @@
 - [x] Emby 只读适配、Etag 增量元数据/全量回退、双入口及人工纠错 UI；真实服务尚未连接。
 - [x] Windows、Linux、隔离 Docker 及原 Python 3.7.4 / scikit-learn 0.21.3 兼容测试。
 - [x] 三位独立审查者对 `224f864` 完整复审通过，各自独立执行 25 项隔离测试。
+- [x] `1e94c22` 保留并合入 master 既有队列/布局/HTTPS 修复，PR 冲突解除；三位独立合并复审及 27 项测试通过。
 - [ ] 真实来源/个人数据及生产验收门槛（见交接文档）。
 
 验证结果详见 `V2_VALIDATION_REPORT.zh-CN.md`；当前实现与限制详见 `V2_DEPLOYMENT_HANDOFF.zh-CN.md`；来源证据见 `V2_SOURCE_EVIDENCE.zh-CN.md`。

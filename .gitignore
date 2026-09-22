@@ -51,6 +51,8 @@ nosetests.xml
 *.backup
 .env
 data/model/
+data/javbus-cookies.txt
+data/crawl-queue.json
 private/
 test-results/
 
