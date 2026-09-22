@@ -27,3 +27,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -f Dockerfile.v2-test -t bustag-v2-test .
       - run: docker run --rm --network none bustag-v2-test
+  legacy-runtime-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f Dockerfile.v2-legacy-test -t bustag-v2-legacy-test .
+      - run: docker run --rm --network none bustag-v2-legacy-test

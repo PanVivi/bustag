@@ -1,0 +1,8 @@
+FROM python:3.7.4-slim
+WORKDIR /code
+COPY requirements-v2-legacy-test.txt .
+RUN pip install --no-cache-dir -r requirements-v2-legacy-test.txt
+COPY bustag ./bustag
+COPY tests/v2 ./tests/v2
+RUN python -c "import bustag.recommender.model as m; assert m.__file__.startswith('/code/bustag/'); print(m.runtime())"
+CMD ["python", "-m", "pytest", "tests/v2", "-q"]
