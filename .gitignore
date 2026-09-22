@@ -43,6 +43,17 @@ nosetests.xml
 # venv
 .venv/
 
+# Never publish user feedback, inventory, media paths, credentials or models.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+*.backup
+.env
+data/model/
+private/
+test-results/
+
 # Cookiecutter
 output/
 

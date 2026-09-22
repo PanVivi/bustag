@@ -90,6 +90,14 @@ def _check_training_data(df):
 
 
 def train():
+    from bustag.recommender.store import Store
+    store = Store(get_data_path('bus.db'))
+    try:
+        if store.enabled():
+            from bustag.recommender.model import train as final_train
+            return None, final_train(store, get_data_path('model/final-v2'))
+    finally:
+        store.close()
     df = build_training_frame()
     _check_training_data(df)
 
@@ -167,6 +175,21 @@ def recommend(rescore_all=False):
     Score new items during normal scheduled runs. After a model retrain,
     rescore_all=True refreshes prior system predictions once.
     '''
+    from bustag.recommender.store import Store
+    store = Store(get_data_path('bus.db'))
+    try:
+        if store.enabled():
+            from bustag.recommender.model import load as final_load, rescore
+            store.import_legacy()
+            try:
+                bundle = final_load(store, get_data_path('model/final-v2'))
+            except (OSError, ValueError):
+                return 0, 0  # Explicit actor priority remains available without a model.
+            with store.transaction():
+                count = rescore(store, bundle)
+            return count, count
+    finally:
+        store.close()
     model, mlb, _ = _load_bundle()
     ids, X = prepare_predict_data(
         include_system=rescore_all,

@@ -156,6 +156,8 @@ def _remove_extra_tags(item):
 
 @route('/')
 def index():
+    if _v2_enabled():
+        redirect('/v2')
     rate_type = RATE_TYPE.SYSTEM_RATE.value
     rate_value = int(request.query.get('like', RATE_VALUE.LIKE.value))
     page = int(request.query.get('page', 1))
@@ -204,6 +206,7 @@ def tag(fanhao):
             ItemRate.saveit(rate_type, rate_value, fanhao)
             logger.debug(f'add new item_rate for fanhao:{fanhao}')
         else:
+            item_rate.rate_type = RATE_TYPE.USER_RATE
             item_rate.rate_value = rate_value
             item_rate.rete_time = get_now_time()
             item_rate.save()
@@ -244,6 +247,8 @@ def correct(fanhao):
 
 @route('/model')
 def other_settings():
+    if _v2_enabled():
+        redirect('/v2/status')
     try:
         _, model_scores = clf.load()
     except FileNotFoundError:
@@ -253,6 +258,8 @@ def other_settings():
 
 @route('/do-training')
 def do_training():
+    if _v2_enabled():
+        redirect('/v2/status')
     error_msg = None
     model_scores = None
     try:
@@ -335,6 +342,20 @@ def about():
 
 
 app = bottle.default_app()
+
+# Routes remain disabled until the explicit, backed-up additive migration.
+from bustag.recommender.web import install as install_v2
+from bustag.util import get_data_path
+install_v2(app, get_data_path('bus.db'), get_data_path('model/final-v2'))
+
+
+def _v2_enabled():
+    from bustag.recommender.store import Store
+    store = Store(get_data_path('bus.db'))
+    try:
+        return store.enabled()
+    finally:
+        store.close()
 
 
 def start_app():

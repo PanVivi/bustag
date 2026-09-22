@@ -27,6 +27,7 @@
   </button>
   <div class="collapse navbar-collapse" id="navbarNav">
     <ul class="navbar-nav">
+      <li class="nav-item"><a class="nav-link" href="/v2">个人推荐 V2</a></li>
       <li class="nav-item {{ 'active' if path=='/' else ''}}">
         <a class="nav-link" href="/">推荐 <span class="sr-only">(current)</span></a>
       </li>
