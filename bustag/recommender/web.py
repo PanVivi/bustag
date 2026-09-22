@@ -56,7 +56,7 @@ def install(app, database, models):
                 store.feedback(work_id, int(request.forms.get('value', '-1')))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid feedback')
-        redirect('/v2')
+        redirect('/v2', 303)
 
     @app.post('/v2/actor/<actor_id>')
     def actor(actor_id):
@@ -66,7 +66,7 @@ def install(app, database, models):
                 store.preference(actor_id, request.forms.get('state'))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid actor preference')
-        redirect('/v2')
+        redirect('/v2', 303)
 
     @app.post('/v2/tag/<work_id>/<tag_id>')
     def tag(work_id, tag_id):
@@ -78,7 +78,7 @@ def install(app, database, models):
                 store.correct_tag(work_id, tag_id, request.forms.get('enabled') == '1')
         except sqlite3.IntegrityError:
             abort(400, 'Unknown work or tag')
-        redirect('/v2')
+        redirect('/v2', 303)
 
     @app.get('/v2/status')
     def status():
@@ -89,6 +89,48 @@ def install(app, database, models):
             manifest = store.rows('SELECT manifest_json FROM model_manifest WHERE version=?', (store.meta('active_model'),))
             return template('v2_status', path='/v2/status', stats=store.statistics(), jobs=state,
                             inventory=inventory, manifest=manifest, csrf=CSRF)
+
+    @app.get('/v2/manage')
+    def manage():
+        try:
+            page = max(1, int(request.query.get('page', '1')))
+        except ValueError:
+            abort(400, 'Invalid page')
+        with opened() as store:
+            actors = store.rows("SELECT a.*,coalesce(p.state,'pending') AS state FROM actor a LEFT JOIN actor_preference p USING(actor_id) ORDER BY a.name,a.actor_id LIMIT 50 OFFSET ?", ((page-1)*50,))
+            tags = store.rows('SELECT s.*,c.category AS canonical_category,c.name AS canonical_name FROM source_tag s JOIN canonical_tag c USING(tag_id) ORDER BY s.source,s.category,s.source_id LIMIT 50 OFFSET ?', ((page-1)*50,))
+            pending = store.rows('SELECT server,item_id FROM media_copy WHERE work_id IS NULL LIMIT 50 OFFSET ?', ((page-1)*50,))
+            return template('v2_manage', path='/v2/manage', actors=actors, tags=tags, pending=pending, csrf=CSRF, page=page)
+
+    @app.post('/v2/map-tag')
+    def map_tag():
+        csrf()
+        try:
+            with opened() as store:
+                store.map_tag(*(request.forms.get(k, '') for k in ('source', 'category', 'source_id', 'tag_id')))
+        except (ValueError, sqlite3.IntegrityError):
+            abort(400, 'Invalid mapping')
+        redirect('/v2/manage', 303)
+
+    @app.post('/v2/resolve-media')
+    def resolve_media():
+        csrf()
+        try:
+            with opened() as store:
+                store.resolve_media(*(request.forms.get(k, '') for k in ('server', 'item_id', 'work_id')))
+        except (ValueError, sqlite3.IntegrityError):
+            abort(400, 'Invalid media match')
+        redirect('/v2/manage', 303)
+
+    @app.post('/v2/merge-actor')
+    def merge_actor():
+        csrf()
+        try:
+            with opened() as store:
+                store.merge_actor(request.forms.get('source_actor', ''), request.forms.get('target_actor', ''))
+        except (ValueError, sqlite3.IntegrityError):
+            abort(400, 'Invalid actor mapping or conflicting explicit preferences')
+        redirect('/v2/manage', 303)
 
     @app.post('/v2/job/<kind>')
     def job(kind):

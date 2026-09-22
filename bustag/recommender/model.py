@@ -11,12 +11,11 @@ import numpy as np
 import sklearn
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 
-from .ranking import FEATURE_VERSION, features
-from .store import encode, now
+from .ranking import FEATURE_VERSION, features, auxiliary_score, collection_prototype
+from .store import Store, encode, now
 
 
 def runtime():
@@ -35,8 +34,8 @@ def metrics(labels, scores, k=10):
     margin = 1.96 * np.sqrt(precision*(1-precision)/max(k, 1) + 1.96**2/(4*max(k, 1)**2)) / denominator
     return {'n': len(labels), 'positive': int(sum(labels)), 'k': k,
             'precision_at_k': precision, 'recall_at_k': float(sum(top)/sum(labels)) if sum(labels) else 0,
-            'positive_recall': float(recall_score(labels, scores >= .5, zero_division=0)),
-            'precision': float(precision_score(labels, scores >= .5, zero_division=0)),
+            'positive_recall': float(sum((scores >= .5) & (labels == 1)) / max(1, sum(labels))),
+            'precision': float(sum((scores >= .5) & (labels == 1)) / max(1, sum(scores >= .5))),
             'precision_at_k_wilson95': [max(0, centre-margin), min(1, centre+margin)],
             'false_positive_count': int(sum((scores >= .5) & (labels == 0))),
             'false_negative_count': int(sum((scores < .5) & (labels == 1)))}
@@ -87,6 +86,8 @@ def compare(store, rows):
                 '演员状态/标签映射/收藏缺少完整历史快照时，不报告其历史因果收益。',
                 '收藏辅助默认0；真实时间点收藏快照消融通过前不得启用。'],
               'collection_weight': 0.0, 'temporal': {}}
+    report['ablations'] = {}
+    final_predictions = None
     for algorithm in algorithms:
         docs = documents[algorithm]
         encoder = DictVectorizer()
@@ -100,6 +101,43 @@ def compare(store, rows):
         model.fit(X, y[train_ids], **kwargs)
         predictions = model.predict_proba(encoder.transform([docs[i] for i in test_ids]))[:, 1]
         report['comparison'][algorithm] = metrics(y[test_ids], predictions)
+        if algorithm == 'final_lr':
+            final_predictions = predictions
+    # Same immutable split for feature ablations; these are current-snapshot
+    # diagnostics, never retrospective evidence of a user's future preference.
+    canonical = documents['final_lr']
+    for name, transform in (
+            ('without_actor', lambda d: {k: v for k, v in d.items() if not k.startswith('actor:')}),
+            ('without_category_normalization', lambda d: {k: 1.0 for k in d})):
+        docs = [transform(d) for d in canonical]
+        encoder = DictVectorizer()
+        X = encoder.fit_transform([docs[i] for i in train_ids])
+        if X.shape[1]:
+            fitted = classifier('final_lr', len(train_ids)).fit(X, y[train_ids])
+            score = fitted.predict_proba(encoder.transform([docs[i] for i in test_ids]))[:, 1]
+            report['ablations'][name] = metrics(y[test_ids], score)
+    prototype = collection_prototype(store)
+    auxiliary = np.array([auxiliary_score(canonical[i], prototype) for i in test_ids])
+    report['ablations']['collection'] = {
+        'status': 'diagnostic_only_not_authorized_for_activation',
+        'eligible_feature_count': len(prototype),
+        'weights': {str(weight): metrics(y[test_ids], final_predictions + weight*auxiliary)
+                    for weight in (0.0, 0.05, 0.1, 0.2)}}
+    liked = {r['actor_id'] for r in store.rows("SELECT actor_id FROM actor_preference WHERE state='like'")}
+    actor_first = np.array([any(key[6:] in liked for key in canonical[i] if key.startswith('actor:')) for i in test_ids])
+    order = sorted(range(len(test_ids)), key=lambda i: (not actor_first[i], -final_predictions[i]))
+    top = order[:min(10, len(order))]
+    report['ablations']['actor_priority_current_states'] = {
+        'status': 'diagnostic_only_manual_states_have_no_historical_snapshot',
+        'precision_at_k': float(np.mean(y[test_ids][top])),
+        'liked_actor_candidates': int(sum(actor_first)),
+        'liked_actor_top_k': int(sum(actor_first[top])),
+        'without_priority': metrics(y[test_ids], final_predictions)}
+    seen = {k for i in train_ids for k in canonical[i] if k.startswith('actor:')}
+    unseen = np.array([not any(k in seen for k in canonical[i] if k.startswith('actor:')) for i in test_ids])
+    report['actor_segments'] = {
+        name: metrics(y[test_ids][mask], final_predictions[mask])
+        for name, mask in (('new_or_missing_actor', unseen), ('seen_actor', ~unseen)) if any(mask)}
     # Time split is a current-metadata diagnostic only. Repeated feedback after the
     # cutoff or missing historical metadata makes strict historical claims invalid.
     cut = int(len(rows)*.75)
@@ -140,10 +178,20 @@ def _atomic_json(path, value):
 
 
 def train(store, directory):
-    rows = training_data(store)
-    mapping = int(store.meta('mapping_version'))
+    snapshot = Store(':memory:')
+    store.conn.backup(snapshot.conn)
+    try:
+        return _train_snapshot(store, snapshot, directory)
+    finally:
+        snapshot.close()
+
+
+def _train_snapshot(store, snapshot, directory):
+    rows = training_data(snapshot)
+    mapping = int(snapshot.meta('mapping_version'))
+    previous = snapshot.meta('active_model')
     version = uuid.uuid4().hex
-    report, documents = compare(store, rows)
+    report, documents = compare(snapshot, rows)
     encoder = DictVectorizer()
     X = encoder.fit_transform(documents)
     model = classifier(report['selected'], len(rows)).fit(X, [r['value'] for r in rows])
@@ -155,7 +203,9 @@ def train(store, directory):
     # One immutable generation holds model, encoder and mapping contract. The small
     # pointer is switched only after readback, checksum and DB score transaction.
     with open(artifact, 'xb') as stream:
-        pickle.dump({'model': model, 'encoder': encoder, 'manifest': manifest}, stream)
+        pickle.dump({'model': model, 'encoder': encoder, 'manifest': manifest,
+                     'mapping': snapshot.rows('SELECT * FROM source_tag'),
+                     'corrections': snapshot.rows('SELECT * FROM tag_override')}, stream)
         stream.flush()
         os.fsync(stream.fileno())
     with open(artifact, 'rb') as stream:
@@ -166,9 +216,12 @@ def train(store, directory):
     if mapping != int(store.meta('mapping_version')):
         raise ValueError('标签映射已变化，保留旧模型，请重新训练')
     _atomic_json(os.path.join(directory, version + '.json'), manifest)
-    previous = store.meta('active_model')
+    scored = _score_rows(snapshot, checked)
     with store.transaction():
-        rescore(store, checked, version)
+        store.conn.execute('BEGIN IMMEDIATE')
+        if mapping != int(store.meta('mapping_version')) or store.meta('active_model') != previous:
+            raise ValueError('Model or mapping changed while fitting; old generation retained')
+        _write_scores(store, scored)
         store.conn.execute('INSERT INTO model_manifest VALUES (?,?,?)', (version, encode(manifest), now()))
         store.set_meta('previous_model', previous or '')
         store.set_meta('active_model', version)
@@ -193,24 +246,48 @@ def load(store, directory, version=None):
     return pickle.loads(payload)
 
 
-def rescore(store, bundle, version=None):
+def _score_rows(store, bundle):
     manifest = bundle['manifest']
-    version = version or manifest['version']
     works = store.rows('SELECT work_id FROM work_identity ORDER BY work_id')
     docs = [features(store, w['work_id']) for w in works]
     if not works:
-        return 0
+        return []
     scores = bundle['model'].predict_proba(bundle['encoder'].transform(docs))[:, 1]
-    for work, score in zip(works, scores):
-        store.conn.execute('INSERT OR REPLACE INTO v2_recommendation_score VALUES (?,?,?,?,?,?,?)',
-                          (work['work_id'], version, FEATURE_VERSION, manifest['mapping_version'], float(score), 0, now()))
-    return len(works)
+    return [(work['work_id'], manifest['version'], FEATURE_VERSION, manifest['mapping_version'], float(score), 0, now()) for work, score in zip(works, scores)]
+
+
+def _write_scores(store, rows):
+    store.conn.executemany('INSERT OR REPLACE INTO v2_recommendation_score VALUES (?,?,?,?,?,?,?)', rows)
+
+
+def rescore(store, bundle):
+    snapshot = Store(':memory:')
+    store.conn.backup(snapshot.conn)
+    try:
+        rows = _score_rows(snapshot, bundle)
+    finally:
+        snapshot.close()
+    with store.transaction():
+        store.conn.execute('BEGIN IMMEDIATE')
+        manifest = bundle['manifest']
+        if (store.meta('active_model') != manifest['version'] or
+                int(store.meta('mapping_version')) != manifest['mapping_version']):
+            raise ValueError('Stale scoring task; active generation retained')
+        _write_scores(store, rows)
+    return len(rows)
 
 
 def rollback(store, directory):
     previous = store.meta('previous_model')
+    if not previous:
+        raise ValueError('No previous model generation')
     bundle = load(store, directory, previous)
+    active = store.meta('active_model')
+    rows = _score_rows(store, bundle)
     with store.transaction():
-        rescore(store, bundle)
-        store.set_meta('previous_model', store.meta('active_model'))
+        store.conn.execute('BEGIN IMMEDIATE')
+        if store.meta('active_model') != active or int(store.meta('mapping_version')) != bundle['manifest']['mapping_version']:
+            raise ValueError('Model or mapping changed during rollback')
+        _write_scores(store, rows)
+        store.set_meta('previous_model', active)
         store.set_meta('active_model', previous)

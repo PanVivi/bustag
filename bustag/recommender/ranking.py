@@ -47,7 +47,12 @@ def collection_prototype(store):
     prototype = defaultdict(float)
     for doc in documents:
         for key, value in doc.items():
-            prototype[key] += value * math.log((len(documents) + 1) / (counts[key] + 1))
+            if key.startswith('tag:'):
+                tag_id = key.rsplit(':', 1)[1]
+                verified = store.rows('SELECT 1 FROM source_tag WHERE tag_id=? AND verified=1 LIMIT 1', (tag_id,))
+                if not verified:
+                    continue
+            prototype[key] += value * math.log((len(documents) + 1) / (counts[key] + 0.5))
     norm = math.sqrt(sum(v*v for v in prototype.values())) or 1
     return {key: value / norm for key, value in prototype.items()}
 

@@ -43,8 +43,9 @@ class Emby:
         from urllib.parse import quote
         return self.get('/Users/' + quote(self.user_id, safe='') + '/Items', {
             'ParentId': self.library_id, 'Recursive': 'true', 'IncludeItemTypes': 'Movie',
-            'Fields': 'Path,People,Genres,Tags,ProviderIds,MediaSources',
-            'StartIndex': offset, 'Limit': size, 'SortBy': 'Id', 'SortOrder': 'Ascending'})
+            'Fields': 'Path,People,Genres,Tags,ProviderIds,MediaSources,OriginalTitle',
+            'EnableUserData': 'true',
+            'StartIndex': offset, 'Limit': size, 'SortBy': 'SortName', 'SortOrder': 'Ascending'})
 
 
 def match_work(store, item):
@@ -111,7 +112,17 @@ def sync(store, client, page_size=100, pause=.1):
                 raise ValueError('Library changed while paging; restart sync')
             for row in staged:
                 item = json.loads(row['payload'])
-                work_id = match_work(store, item)
+                work_id = store.meta('media_match:' + encode([server, str(item['Id'])])) or match_work(store, item)
+                code = normalize_code(item.get('OriginalTitle') or item.get('Name') or '')
+                if work_id is None and code and not store.rows('SELECT 1 FROM work_identity WHERE code=?', (code,)):
+                    work_id = store.work('emby:' + server, str(item['Id']), item.get('Name', ''), code, raw={'Name': item.get('Name'), 'ProviderIds': item.get('ProviderIds')})
+                if work_id:
+                    for person in item.get('People') or []:
+                        if person.get('Type') == 'Actor' and person.get('Id'):
+                            store.add_actor(work_id, 'emby:' + server, str(person['Id']), person.get('Name', ''))
+                    for category, key in (('genre', 'Genres'), ('tag', 'Tags')):
+                        for name in item.get(key) or []:
+                            store.add_tag(work_id, 'emby:' + server, category, name, name)
                 available = not item.get('IsVirtualItem', False) and not item.get('IsOffline', False)
                 playable = available and any(s.get('Path') and (s.get('SupportsDirectPlay') or s.get('SupportsTranscoding'))
                                              for s in item.get('MediaSources', []))

@@ -221,6 +221,32 @@ class Store:
             self.event('mapping', encode([source, category, source_id]), old[0]['tag_id'], canonical_id)
             self.set_meta('mapping_version', version)
 
+    def resolve_media(self, server, item_id, work_id):
+        with self.transaction():
+            old = self.rows('SELECT work_id FROM media_copy WHERE server=? AND item_id=?', (server, item_id))
+            if not old:
+                raise ValueError('Unknown media copy')
+            self.event('media_match', encode([server, item_id]), old[0]['work_id'], work_id)
+            self.conn.execute('UPDATE media_copy SET work_id=?,confidence=1 WHERE server=? AND item_id=?', (work_id, server, item_id))
+            self.set_meta('media_match:' + encode([server, item_id]), work_id)
+
+    def merge_actor(self, source_actor, target_actor):
+        if source_actor == target_actor:
+            return
+        with self.transaction():
+            states = self.rows('SELECT actor_id,state FROM actor_preference WHERE actor_id IN (?,?)', (source_actor, target_actor))
+            if len({r['state'] for r in states if r['state'] != 'pending'}) > 1:
+                raise ValueError('Resolve conflicting manual actor states first')
+            if not self.rows('SELECT 1 FROM actor WHERE actor_id=?', (target_actor,)):
+                raise ValueError('Unknown target actor')
+            self.conn.execute('INSERT OR IGNORE INTO work_actor SELECT work_id,?,source FROM work_actor WHERE actor_id=?', (target_actor, source_actor))
+            self.conn.execute('DELETE FROM work_actor WHERE actor_id=?', (source_actor,))
+            self.conn.execute('UPDATE actor_alias SET actor_id=? WHERE actor_id=?', (target_actor, source_actor))
+            preferred = next((r['state'] for r in states if r['state'] != 'pending'), 'pending')
+            self.conn.execute('INSERT OR REPLACE INTO actor_preference VALUES (?,?,?,?)', (target_actor, preferred, now(), 'user'))
+            self.event('actor_merge', source_actor, source_actor, target_actor)
+            self.set_meta('mapping_version', int(self.meta('mapping_version')) + 1)
+
     def _import_legacy(self):
         tables = {r['name'] for r in self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
         if 'item' not in tables:

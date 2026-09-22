@@ -38,6 +38,7 @@ ENV PYTHONPATH=/app/src/bustag
 COPY requirements.txt .
 COPY patches/aspider-crawling-slow.patch /app/patches/aspider-crawling-slow.patch
 COPY bustag /app/src/bustag/bustag
+RUN python -c "import bustag.recommender.store as s; assert s.__file__.startswith('/app/src/bustag/bustag/')"
 COPY data/config.ini /app/data/config.ini
 
 RUN pip install --no-index --find-links=/install -r requirements.txt
