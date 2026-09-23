@@ -65,27 +65,27 @@
 			<span class="badge badge-secondary">模型待训练或重评分</span>
 % end
 		</div>
-% if details['actors'] or details['tags']:
-		<details class="v2-card-tools">
-			<summary>演员偏好与标签纠错</summary>
 % if details['actors']:
-			<div class="small text-muted mt-2">本片演员人工状态</div>
+		<details class="v2-card-tools v2-actor-tools">
+			<summary>演员偏好（{{len(details['actors'])}}）</summary>
+			<div class="small text-muted mt-2">按演员独立记录偏好，不会更改本片标签或喜欢/不喜欢打标。</div>
 % for actor in details['actors']:
-			<form class="v2-control-row" method="post" action="/v2/actor/{{actor['actor_id']}}">
+			<form class="v2-control-row v2-actor-row" method="post" action="/v2/actor/{{actor['actor_id']}}">
 				<input type="hidden" name="csrf" value="{{csrf}}">
 				<input type="hidden" name="return_to" value="{{return_to}}#form-{{i}}">
-				<label for="actor-{{i}}-{{actor['actor_id']}}">{{actor['name']}}</label>
-				<select id="actor-{{i}}-{{actor['actor_id']}}" name="state" class="custom-select custom-select-sm">
-% for value, label in [('like','喜欢'),('dislike','不喜欢'),('pending','待确认')]:
-					<option value="{{value}}" {{'selected' if actor['state']==value else ''}}>{{label}}</option>
+				<span class="v2-actor-name">{{actor['name']}}</span>
+				<div class="v2-actor-buttons">
+% for value, label, button_class in [('like','喜欢','btn-primary'),('dislike','不喜欢','btn-danger'),('pending','待确认','btn-secondary')]:
+					<button type="submit" name="state" value="{{value}}" class="btn {{button_class}} btn-sm {{'active' if actor['state']==value else ''}}" aria-pressed="{{'true' if actor['state']==value else 'false'}}">{{label}}</button>
 % end
-				</select>
-				<button type="submit" class="btn btn-outline-secondary btn-sm">保存</button>
+				</div>
 			</form>
 % end
+		</details>
 % end
 % if details['tags']:
-			<div class="small text-muted mt-2">本片标签人工纠错</div>
+		<details class="v2-card-tools v2-tag-tools">
+			<summary>标签纠错（{{len(details['tags'])}}）</summary>
 % for tag in details['tags']:
 			<form class="v2-control-row" method="post" action="/v2/tag/{{details['work_id']}}/{{tag['tag_id']}}">
 				<input type="hidden" name="csrf" value="{{csrf}}">
@@ -95,8 +95,8 @@
 				<button type="submit" name="enabled" value="{{'0' if tag['enabled'] else '1'}}" class="btn btn-outline-secondary btn-sm">{{'排除误标' if tag['enabled'] else '恢复标签'}}</button>
 			</form>
 % end
-% end
 		</details>
+% end
 % end
 % end
 	</div>

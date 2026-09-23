@@ -58,6 +58,12 @@ def test_legacy_tag_template_embeds_v2_controls_without_nested_forms():
     assert 'href="/tagit"' in page
     assert 'action="/tag/SYN-001?page=1"' in page
     assert 'action="/v2/actor/actor-1"' in page
+    assert 'name="state" value="like"' in page
+    assert 'name="state" value="dislike"' in page
+    assert 'name="state" value="pending"' in page
+    assert 'aria-pressed="true">待确认</button>' in page
+    assert '演员偏好（1）' in page and '标签纠错（1）' in page
+    assert '演员偏好与标签纠错' not in page
     assert 'action="/v2/tag/work-1/tag-1"' in page
     assert 'btn btn-primary btn-sm' in page and 'btn btn-danger btn-sm' in page
     assert '个人推荐 V2' not in page

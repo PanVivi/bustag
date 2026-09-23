@@ -206,7 +206,21 @@ def _legacy_v2_details(items):
         store = Store(get_data_path('bus.db'))
         if not store.enabled():
             return {}
-        return legacy_card_details(store, [item.fanhao for item in items])
+        codes = [item.fanhao for item in items]
+        added = store.sync_legacy_items(codes)
+        if added:
+            logger.info('V2 card-link backfill added %s legacy card(s)', added)
+        details = legacy_card_details(store, codes)
+        missing_scores = [detail['work_id'] for detail in details.values() if not detail['has_score']]
+        if missing_scores and store.meta('active_model'):
+            try:
+                from bustag.recommender import model
+                bundle = model.load(store, get_data_path('model/final-v2'))
+                model.rescore_work_ids(store, bundle, missing_scores)
+                details = legacy_card_details(store, codes)
+            except Exception as error:
+                logger.warning('V2 score refresh deferred (%s)', type(error).__name__)
+        return details
     except Exception as error:
         logger.warning('V2 tag-card enrichment unavailable (%s)', type(error).__name__)
         return {}

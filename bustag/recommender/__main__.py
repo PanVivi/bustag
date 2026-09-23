@@ -12,7 +12,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     migration = commands.add_parser('migrate')
     migration.add_argument('--backup', required=True)
-    for name in ('stats', 'train', 'rescore', 'rollback-model', 'sync-emby', 'reset-job'):
+    for name in ('stats', 'sync-legacy', 'train', 'rescore', 'rollback-model', 'sync-emby', 'reset-job'):
         commands.add_parser(name)
     args = parser.parse_args()
     store = Store(args.db)
@@ -23,6 +23,8 @@ def main():
             raise ValueError('Run explicit backup + migration first')
         elif args.command == 'stats':
             result = store.statistics()
+        elif args.command == 'sync-legacy':
+            result = store.import_legacy()
         elif args.command == 'sync-emby':
             from .emby import Emby, sync
             result = sync(store, Emby.from_environment())

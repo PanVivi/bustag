@@ -260,6 +260,38 @@ def _write_scores(store, rows):
     store.conn.executemany('INSERT OR REPLACE INTO v2_recommendation_score VALUES (?,?,?,?,?,?,?)', rows)
 
 
+def rescore_work_ids(store, bundle, work_ids):
+    """Score only newly linked works with the current validated model bundle."""
+    manifest = bundle['manifest']
+    active = store.meta('active_model')
+    mapping_version = int(store.meta('mapping_version', '0') or 0)
+    if active != manifest['version'] or mapping_version != manifest['mapping_version']:
+        raise ValueError('Stale scoring task; active generation retained')
+    work_ids = list(dict.fromkeys(work_ids))
+    if not work_ids:
+        return 0
+    rows = []
+    # Stay below SQLite's bind-variable limit even for a large repair batch.
+    for offset in range(0, len(work_ids), 500):
+        chunk = work_ids[offset:offset + 500]
+        marks = ','.join('?' for _ in chunk)
+        works = store.rows('SELECT work_id FROM work_identity WHERE work_id IN (' + marks + ') ORDER BY work_id', tuple(chunk))
+        if not works:
+            continue
+        docs = [features(store, row['work_id']) for row in works]
+        scores = bundle['model'].predict_proba(bundle['encoder'].transform(docs))[:, 1]
+        rows.extend((row['work_id'], manifest['version'], FEATURE_VERSION,
+                     manifest['mapping_version'], float(score), 0.0, now())
+                    for row, score in zip(works, scores))
+    with store.transaction():
+        store.conn.execute('BEGIN IMMEDIATE')
+        if (store.meta('active_model') != manifest['version'] or
+                int(store.meta('mapping_version')) != manifest['mapping_version']):
+            raise ValueError('Stale scoring task; active generation retained')
+        _write_scores(store, rows)
+    return len(rows)
+
+
 def rescore(store, bundle):
     snapshot = Store(':memory:')
     store.conn.backup(snapshot.conn)

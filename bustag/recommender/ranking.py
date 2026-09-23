@@ -63,6 +63,7 @@ def legacy_card_details(store, codes):
         auxiliary = float(row['auxiliary'] or 0.0) if current else 0.0
         detail = {
             'work_id': row['work_id'],
+            'has_score': row['score'] is not None,
             'model_current': current,
             'model_score': model_score,
             'auxiliary': auxiliary,

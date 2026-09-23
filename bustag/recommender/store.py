@@ -267,25 +267,65 @@ class Store:
             self.set_meta('actor_redirect:' + source_actor, target_actor)
             self.set_meta('mapping_version', int(self.meta('mapping_version')) + 1)
 
+    def _legacy_item_reference(self, table):
+        """Return the legacy foreign-key column and its referenced item column."""
+        if table not in ('item_tag', 'item_rate'):
+            raise ValueError('Unsupported legacy relation')
+        refs = self.rows('PRAGMA foreign_key_list(' + table + ')')
+        for ref in refs:
+            if ref['table'] == 'item':
+                source, target = ref['from'], ref['to']
+                if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', source or '') and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', target or ''):
+                    return source, target
+        columns = {r['name'] for r in self.rows('PRAGMA table_info(' + table + ')')}
+        item_columns = {r['name'] for r in self.rows('PRAGMA table_info(item)')}
+        candidates = [('item_id', 'fanhao'), ('item_id', 'id'),
+                      ('item_fanhao', 'fanhao'), ('fanhao', 'fanhao')]
+        matches = []
+        for source, target in candidates:
+            if source in columns and target in item_columns:
+                sql = ('SELECT count(*) FROM "{}" r JOIN item i ON r."{}"=i."{}"').format(
+                    table, source, target)
+                matches.append((self.conn.execute(sql).fetchone()[0], target == 'fanhao', source, target))
+        if matches:
+            _, _, source, target = max(matches)
+            return source, target
+        raise ValueError('Cannot identify legacy item reference for ' + table)
+
+    def _import_legacy_card(self, item, tag_ref, tag_target):
+        work_id = self.work('javbus', item['fanhao'], item['title'], item['fanhao'], raw=item, url=item['url'])
+        query = ('SELECT t.* FROM tag t JOIN item_tag it ON t.id=it.tag_id '
+                 'WHERE it."{}"=?').format(tag_ref)
+        for tag in self.rows(query, (item[tag_target],)):
+            if tag['type'] == 'star':
+                # Missing actor IDs remain separate; never resolve by display name.
+                self.add_actor(work_id, 'javbus', tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
+            else:
+                self.add_tag(work_id, 'javbus', tag['type'], tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
+        return work_id
+
     def _import_legacy(self):
         tables = {r['name'] for r in self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
         if 'item' not in tables:
             return
-        def reference_column(table):
-            refs = self.rows('PRAGMA foreign_key_list(' + table + ')')
-            return 'id' if any(r['table'] == 'item' and r['to'] == 'id' for r in refs) else 'fanhao'
-        tag_ref = reference_column('item_tag')
-        rate_ref = reference_column('item_rate')
+        try:
+            tag_ref, tag_target = self._legacy_item_reference('item_tag')
+            rate_ref, rate_target = self._legacy_item_reference('item_rate')
+        except ValueError:
+            # Preserve the established KeyError contract for malformed legacy schemas.
+            columns = {r['name'] for r in self.rows('PRAGMA table_info(item)')}
+            if not {'id', 'fanhao', 'title', 'url'}.issubset(columns):
+                missing = next(name for name in ('id', 'fanhao', 'title', 'url') if name not in columns)
+                raise KeyError(missing)
+            raise KeyError('Unsupported legacy item relationship')
         for item in self.rows('SELECT * FROM item'):
-            work_id = self.work('javbus', item['fanhao'], item['title'], item['fanhao'], raw=item, url=item['url'])
-            for tag in self.rows('SELECT t.* FROM tag t JOIN item_tag it ON t.id=it.tag_id WHERE it.item_id=?', (item[tag_ref],)):
-                if tag['type'] == 'star':
-                    # Missing actor IDs remain separate; never resolve by display name.
-                    self.add_actor(work_id, 'javbus', tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
-                else:
-                    self.add_tag(work_id, 'javbus', tag['type'], tag['url'] or 'legacy-tag:{}'.format(tag['id']), tag['value'])
+            self._import_legacy_card(item, tag_ref, tag_target)
         # Most recent independent work judgement wins; retain all original rows.
-        for row in self.rows('SELECT r.*,s.work_id FROM item_rate r JOIN item i ON r.item_id=i.' + rate_ref + ' JOIN source_item s ON s.source=\'javbus\' AND s.source_id=i.fanhao WHERE rate_type=1 ORDER BY rete_time DESC,r.id DESC'):
+        query = ('SELECT r.*,s.work_id FROM item_rate r JOIN item i ON r."{rate_ref}"=i."{rate_target}" '
+                 'JOIN source_item s ON s.source=\'javbus\' AND s.source_id=i.fanhao '
+                 'WHERE r.rate_type=1 ORDER BY r.rete_time DESC,r.id DESC').format(
+                     rate_ref=rate_ref, rate_target=rate_target)
+        for row in self.rows(query):
             if not self.rows('SELECT 1 FROM explicit_work_feedback WHERE work_id=?', (row['work_id'],)):
                 self.conn.execute('INSERT INTO explicit_work_feedback VALUES (?,?,?,?)', (row['work_id'], row['rate_value'], row['rete_time'], 'legacy_user'))
                 self.event('work', row['work_id'], None, row['rate_value'], 'legacy_user', row['rete_time'])
@@ -297,16 +337,56 @@ class Store:
               INSERT INTO feedback_event(entity,entity_id,old_value,new_value,created_at,source)
                 SELECT 'work',s.work_id,NULL,CAST(NEW.rate_value AS TEXT),NEW.rete_time,'legacy_user'
                 FROM source_item s JOIN item i ON s.source_id=i.fanhao
-                WHERE s.source='javbus' AND i.''' + rate_ref + '''=NEW.item_id;
+                WHERE s.source='javbus' AND i."''' + rate_target + '''"=NEW."''' + rate_ref + '''";
               INSERT OR REPLACE INTO explicit_work_feedback(work_id,value,confirmed_at,source)
                 SELECT s.work_id,NEW.rate_value,NEW.rete_time,'legacy_user'
                 FROM source_item s JOIN item i ON s.source_id=i.fanhao
-                WHERE s.source='javbus' AND i.''' + rate_ref + '''=NEW.item_id;
+                WHERE s.source='javbus' AND i."''' + rate_target + '''"=NEW."''' + rate_ref + '''";
               END''')
 
     def import_legacy(self):
+        """Idempotently import legacy cards/tags/feedback without replacing V2 state."""
         with self.transaction():
             self._import_legacy()
+        return self.statistics()
+
+    def sync_legacy_items(self, codes):
+        """Idempotently sync requested legacy cards and additive metadata.
+
+        New source links and metadata are added; identities, V2 feedback,
+        actor preferences and tag corrections are never overwritten/deleted.
+        """
+        codes = list(dict.fromkeys(str(code) for code in codes if code))
+        if not codes:
+            return 0
+        tables = {r['name'] for r in self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {'item', 'item_tag', 'tag'}.issubset(tables):
+            return 0
+        marks = ','.join('?' for _ in codes)
+        linked = {r['source_id'] for r in self.rows(
+            "SELECT source_id FROM source_item WHERE source='javbus' AND source_id IN (" + marks + ')', tuple(codes))}
+        missing = [code for code in codes if code not in linked]
+        if not missing:
+            return 0
+        tag_ref, tag_target = self._legacy_item_reference('item_tag')
+        if 'item_rate' in tables:
+            rate_ref, rate_target = self._legacy_item_reference('item_rate')
+        count = 0
+        with self.transaction():
+            items = self.rows('SELECT * FROM item WHERE fanhao IN (' + ','.join('?' for _ in missing) + ')', tuple(missing))
+            for item in items:
+                work_id = self._import_legacy_card(item, tag_ref, tag_target)
+                if 'item_rate' in tables:
+                    query = ('SELECT * FROM item_rate WHERE rate_type=1 AND "{}"=? '
+                             'ORDER BY rete_time DESC,id DESC').format(rate_ref)
+                    rates = self.rows(query, (item[rate_target],))
+                    for rating in rates:
+                        if not self.rows('SELECT 1 FROM explicit_work_feedback WHERE work_id=?', (work_id,)):
+                            self.conn.execute('INSERT INTO explicit_work_feedback VALUES (?,?,?,?)',
+                                              (work_id, rating['rate_value'], rating['rete_time'], 'legacy_user'))
+                            self.event('work', work_id, None, rating['rate_value'], 'legacy_user', rating['rete_time'])
+                count += 1
+        return count
 
     def statistics(self):
         result = {table: self.conn.execute('SELECT count(*) FROM ' + table).fetchone()[0]
