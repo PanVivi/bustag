@@ -33,6 +33,75 @@ def features(store, work_id):
     return result
 
 
+def legacy_card_details(store, codes):
+    """Attach V2 score and correction state to existing JavBus tag cards.
+
+    The legacy /tagit rating buttons remain the sole work-feedback writer. This
+    helper only reads the V2 projection keyed by the same JavBus code.
+    """
+    codes = list(dict.fromkeys(str(code) for code in codes if code))
+    if not codes:
+        return {}
+    placeholders = ','.join('?' for _ in codes)
+    works = store.rows('''SELECT si.source_id AS source_code,w.work_id,
+           s.score,s.auxiliary,s.model_version,s.mapping_version
+        FROM source_item si JOIN work_identity w ON w.work_id=si.work_id
+        LEFT JOIN v2_recommendation_score s ON s.work_id=w.work_id
+        WHERE si.source='javbus' AND si.source_id IN (''' + placeholders + ')', tuple(codes))
+    if not works:
+        return {}
+
+    active_model = store.meta('active_model', '')
+    mapping_version = int(store.meta('mapping_version', '0') or 0)
+    details = {}
+    codes_by_work = defaultdict(list)
+    for row in works:
+        current = bool(active_model and row['score'] is not None and
+                       row['model_version'] == active_model and
+                       row['mapping_version'] == mapping_version)
+        model_score = float(row['score']) if current else None
+        auxiliary = float(row['auxiliary'] or 0.0) if current else 0.0
+        detail = {
+            'work_id': row['work_id'],
+            'model_current': current,
+            'model_score': model_score,
+            'auxiliary': auxiliary,
+            'match_score': model_score + auxiliary if current else None,
+            'actors': [],
+            'tags': [],
+        }
+        details[row['source_code']] = detail
+        codes_by_work[row['work_id']].append(row['source_code'])
+
+    work_ids = list(codes_by_work)
+    work_marks = ','.join('?' for _ in work_ids)
+    actors = store.rows('''SELECT wa.work_id,a.actor_id,a.name,
+           coalesce(p.state,'pending') AS state
+        FROM work_actor wa JOIN actor a ON a.actor_id=wa.actor_id
+        LEFT JOIN actor_preference p ON p.actor_id=a.actor_id
+        WHERE wa.work_id IN (''' + work_marks + ') ORDER BY wa.work_id,a.name,a.actor_id',
+        tuple(work_ids))
+    for actor in actors:
+        for code in codes_by_work[actor['work_id']]:
+            details[code]['actors'].append({
+                'actor_id': actor['actor_id'], 'name': actor['name'], 'state': actor['state']})
+
+    tags = store.rows('''SELECT DISTINCT wt.work_id,c.tag_id,c.category,c.name,
+           coalesce(o.enabled,1) AS enabled
+        FROM work_tag wt JOIN source_tag s
+          ON s.source=wt.source AND s.category=wt.category AND s.source_id=wt.source_id
+        JOIN canonical_tag c ON c.tag_id=s.tag_id
+        LEFT JOIN tag_override o ON o.work_id=wt.work_id AND o.tag_id=c.tag_id
+        WHERE wt.work_id IN (''' + work_marks + ') ORDER BY wt.work_id,c.category,c.name,c.tag_id',
+        tuple(work_ids))
+    for tag in tags:
+        for code in codes_by_work[tag['work_id']]:
+            details[code]['tags'].append({
+                'tag_id': tag['tag_id'], 'category': tag['category'],
+                'name': tag['name'], 'enabled': bool(tag['enabled'])})
+    return details
+
+
 def collection_prototype(store):
     works = store.rows('''SELECT DISTINCT m.work_id FROM media_copy m
        JOIN library_inventory l ON l.server=m.server AND l.generation=m.generation

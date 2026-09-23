@@ -1,24 +1,6 @@
-% rebase('base.tpl', title='偏好与身份确认', path=path)
+% rebase('base.tpl', title='V2 数据维护', path=path)
 <div class="container">
-<a href="/v2">返回推荐</a>
-<h5>作品人工反馈（可更正已排除的作品）</h5>
-% for work in feedback:
-<form method="post" action="/v2/feedback/{{work['work_id']}}">
-<input type="hidden" name="csrf" value="{{csrf}}">
-{{work['code'] or work['title']}} · {{'喜欢' if work['value'] else '不喜欢'}}
-<button name="value" value="1">喜欢</button><button name="value" value="0">不喜欢</button></form>
-% end
-<h5>演员人工三态</h5>
-% for actor in actors:
-<form method="post" action="/v2/actor/{{actor['actor_id']}}">
-<input type="hidden" name="csrf" value="{{csrf}}">
-{{actor['name']}} · {{actor['actor_id']}}
-<select name="state">
-% for value,label in [('like','喜欢'),('dislike','不喜欢'),('pending','待确认')]:
-<option value="{{value}}" {{'selected' if actor['state']==value else ''}}>{{label}}</option>
-% end
-</select><button>保存</button></form>
-% end
+<a href="/tagit">返回原版打标页</a>
 <details><summary>经人工核实，合并同一人的网站身份</summary>
 <form method="post" action="/v2/merge-actor"><input type="hidden" name="csrf" value="{{csrf}}">
 <label>原演员 ID <input name="source_actor" required></label>
@@ -43,7 +25,7 @@
 % end
 {{media['item_id']}} <label>确认作品 ID <input name="work_id" required></label><button>确认对应作品</button></form>
 % end
-<p>作品 ID 可在推荐卡片查看。确认前请在私有 Emby 核对，页面不公开 NAS 路径。</p>
+<p>本页仅用于高级身份/标签映射维护；日常打标与演员偏好请在原版标签卡片中操作。Emby 核对仅限私有只读范围，页面不公开媒体路径。</p>
 % if page > 1:
 <a href="/v2/manage?page={{page-1}}">上一页</a>
 % end

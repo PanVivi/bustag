@@ -1,13 +1,12 @@
 """Bottle routes; CSRF protection on all new manual mutations."""
-import os
 import secrets
 import sqlite3
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from bottle import abort, HTTPResponse, request, template
 
 from .store import Store
-from .ranking import emby_link, rank
 from . import jobs
 
 CSRF = secrets.token_urlsafe(32)
@@ -17,6 +16,16 @@ def redirect(path, status=303):
     # Preserve the browser's public HTTPS origin/port behind the NAS proxy.
     # Bottle's absolute redirects can use the internal HTTP host instead.
     raise HTTPResponse(status=status, headers={'Location': path})
+
+
+def _safe_return_to(default):
+    path = request.forms.get('return_to', '')
+    parsed = urlsplit(path)
+    if (not path.startswith('/') or path.startswith('//') or parsed.scheme or parsed.netloc or
+            parsed.path not in ('/tag', '/tagit', '/v2/manage') or '\\' in path or
+            any(ord(char) < 32 for char in path)):
+        return default
+    return path
 
 
 def install(app, database, models):
@@ -43,26 +52,17 @@ def install(app, database, models):
             page = max(1, int(request.query.get('page', '1')))
         except ValueError:
             abort(400, 'Invalid page')
-        with opened() as store:
-            items = rank(store, entry, 20, (page-1)*20)
-            for work in items:
-                for media in work['media']:
-                    media['link'] = emby_link(store.meta('emby_url:' + media['server']), media['server'], media['item_id'])
-                work['tags'] = store.rows('''SELECT DISTINCT c.*,coalesce(o.enabled,1) AS enabled FROM canonical_tag c
-                    JOIN source_tag s ON c.tag_id=s.tag_id JOIN work_tag w
-                    ON w.source=s.source AND w.category=s.category AND w.source_id=s.source_id
-                    LEFT JOIN tag_override o ON o.tag_id=c.tag_id AND o.work_id=w.work_id WHERE w.work_id=?''', (work['work_id'],))
-            return template('v2', path='/v2', items=items, entry=entry, page=page, csrf=CSRF)
+        target = '/local' if entry == 'local' else '/tagit'
+        if page > 1:
+            target += '?page={}'.format(page)
+        redirect(target, 303)
 
     @app.post('/v2/feedback/<work_id>')
     def feedback(work_id):
+        # Ratings now go through the legacy /tagit form, whose item_rate write
+        # and V2 trigger keep one shared source of truth.
         csrf()
-        try:
-            with opened() as store:
-                store.feedback(work_id, int(request.forms.get('value', '-1')))
-        except (ValueError, sqlite3.IntegrityError):
-            abort(400, 'Invalid feedback')
-        redirect('/v2', 303)
+        abort(410, '作品打标已合并到原版页面，请返回 /tagit 使用同一组按钮。')
 
     @app.post('/v2/actor/<actor_id>')
     def actor(actor_id):
@@ -72,7 +72,7 @@ def install(app, database, models):
                 store.preference(actor_id, request.forms.get('state'))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid actor preference')
-        redirect('/v2', 303)
+        redirect(_safe_return_to('/tagit'), 303)
 
     @app.post('/v2/tag/<work_id>/<tag_id>')
     def tag(work_id, tag_id):
@@ -84,7 +84,7 @@ def install(app, database, models):
                 store.correct_tag(work_id, tag_id, request.forms.get('enabled') == '1')
         except sqlite3.IntegrityError:
             abort(400, 'Unknown work or tag')
-        redirect('/v2', 303)
+        redirect(_safe_return_to('/tagit'), 303)
 
     @app.get('/v2/status')
     def status():
@@ -103,11 +103,9 @@ def install(app, database, models):
         except ValueError:
             abort(400, 'Invalid page')
         with opened() as store:
-            actors = store.rows("SELECT a.*,coalesce(p.state,'pending') AS state FROM actor a LEFT JOIN actor_preference p USING(actor_id) WHERE NOT EXISTS(SELECT 1 FROM v2_meta m WHERE m.key='actor_redirect:' || a.actor_id) ORDER BY a.name,a.actor_id LIMIT 50 OFFSET ?", ((page-1)*50,))
             tags = store.rows('SELECT s.*,c.category AS canonical_category,c.name AS canonical_name FROM source_tag s JOIN canonical_tag c USING(tag_id) ORDER BY s.source,s.category,s.source_id LIMIT 50 OFFSET ?', ((page-1)*50,))
             pending = store.rows('SELECT server,item_id FROM media_copy WHERE work_id IS NULL LIMIT 50 OFFSET ?', ((page-1)*50,))
-            feedback = store.rows('SELECT w.work_id,w.code,w.title,f.value FROM explicit_work_feedback f JOIN work_identity w USING(work_id) ORDER BY f.confirmed_at DESC,w.work_id LIMIT 50 OFFSET ?', ((page-1)*50,))
-            return template('v2_manage', path='/v2/manage', actors=actors, tags=tags, pending=pending, feedback=feedback, csrf=CSRF, page=page)
+            return template('v2_manage', path='/v2/manage', tags=tags, pending=pending, csrf=CSRF, page=page)
 
     @app.post('/v2/map-tag')
     def map_tag():

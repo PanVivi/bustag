@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 import threading
 import traceback
 import sys
@@ -15,6 +16,8 @@ from bustag.util import APP_CONFIG, get_now_time
 from bustag.app.crawl_queue import snapshot as queue_snapshot, enqueue_front, make_item
 from multiprocessing import freeze_support
 from bottle import route, run, template, static_file, request, response, redirect, hook
+
+logger = logging.getLogger(__name__)
 
 dirname = os.path.dirname(os.path.realpath(__file__))
 if getattr(sys, 'frozen', False):
@@ -194,11 +197,31 @@ def _remove_extra_tags(item):
         tags_dict[t] = tags_dict[t][:limit]
 
 
+def _legacy_v2_details(items):
+    """Fail open: V2 decoration must never take down the legacy tag page."""
+    from bustag.recommender.ranking import legacy_card_details
+    from bustag.recommender.store import Store
+    store = None
+    try:
+        store = Store(get_data_path('bus.db'))
+        if not store.enabled():
+            return {}
+        return legacy_card_details(store, [item.fanhao for item in items])
+    except Exception as error:
+        logger.warning('V2 tag-card enrichment unavailable (%s)', type(error).__name__)
+        return {}
+    finally:
+        if store is not None:
+            store.close()
+
+
 @route('/')
+def home():
+    return _safe_redirect('/tag')
+
+
 @route('/recommend')
 def index():
-    if _v2_enabled():
-        return _safe_redirect('/v2')
     rate_type = RATE_TYPE.SYSTEM_RATE.value
     rate_value = int(request.query.get('like', RATE_VALUE.LIKE.value))
     page = int(request.query.get('page', 1))
@@ -216,6 +239,7 @@ def index():
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 
+@route('/tag')
 @route('/tagit')
 def tagit():
     rate_value = request.query.get('like', None)
@@ -233,6 +257,8 @@ def tagit():
         _remove_extra_tags(item)
     return template('tagit', items=items, page_info=page_info, like=rate_value,
                     path=request.path, poster_src=poster_src,
+                    v2_items=_legacy_v2_details(items), csrf=V2_CSRF,
+                    return_to=request.fullpath,
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 
@@ -527,7 +553,7 @@ def about():
 app = bottle.default_app()
 
 # Routes remain disabled until the explicit, backed-up additive migration.
-from bustag.recommender.web import install as install_v2
+from bustag.recommender.web import CSRF as V2_CSRF, install as install_v2
 from bustag.util import get_data_path
 install_v2(app, get_data_path('bus.db'), get_data_path('model/final-v2'))
 
