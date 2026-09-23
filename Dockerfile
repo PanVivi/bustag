@@ -43,6 +43,12 @@ COPY data/config.ini /app/data/config.ini
 
 RUN pip install --no-index --find-links=/install -r requirements.txt
 RUN patch -p1 -d /usr/local/lib/python3.7/site-packages < /app/patches/aspider-crawling-slow.patch
+# Install the fork's crawler implementation over aspider's dependency module.
+# NAS currently provides this exact file as a read-only bind mount; without this
+# copy the production image silently falls back to upstream aspider crawling.py.
+COPY bustag/spider/crawling.py /app/aspider-crawling.py
+RUN cp /app/aspider-crawling.py /usr/local/lib/python3.7/site-packages/aspider/crawling.py \
+    && python -c "import aspider.crawling as c; assert hasattr(c, 'load_javbus_cookies'); assert hasattr(c.Crawler, '_pass_age_gate')"
 
 RUN mkdir /app/docker
 
