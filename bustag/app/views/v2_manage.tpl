@@ -2,14 +2,14 @@
 <div class="container">
 <a href="/tagit">返回原版打标页</a>
 <details><summary>经人工核实，合并同一人的网站身份</summary>
-<form method="post" action="/v2/merge-actor"><input type="hidden" name="csrf" value="{{csrf}}">
+<form method="post" action="/v2/merge-actor"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="return_to" value="/v2/manage?page={{page}}">
 <label>原演员 ID <input name="source_actor" required></label>
 <label>目标演员 ID <input name="target_actor" required></label><button>确认同一演员</button></form>
 <p>仅相同姓名不足以合并。有矛盾人工偏好时需先由用户处理。</p></details>
 <h5>标签来源与语义映射</h5>
 % for tag in tags:
 <form method="post" action="/v2/map-tag">
-<input type="hidden" name="csrf" value="{{csrf}}">
+<input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="return_to" value="/v2/manage?page={{page}}">
 % for key in ['source','category','source_id']:
 <input type="hidden" name="{{key}}" value="{{tag[key]}}">
 % end
@@ -19,7 +19,7 @@
 % end
 <h5>待确认媒体副本</h5>
 % for media in pending:
-<form method="post" action="/v2/resolve-media"><input type="hidden" name="csrf" value="{{csrf}}">
+<form method="post" action="/v2/resolve-media"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="return_to" value="/v2/manage?page={{page}}">
 % for key in ['server','item_id']:
 <input type="hidden" name="{{key}}" value="{{media[key]}}">
 % end

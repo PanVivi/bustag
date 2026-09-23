@@ -28,6 +28,7 @@
 %for item in items:
 % details = v2_items.get(item.fanhao)
 % actor_states = {actor['name']: actor['state'] for actor in details['actors']} if details else {}
+% actor_ids = {actor['name']: actor['actor_id'] for actor in details['actors']} if details else {}
 <article id="form-{{i}}" class="tag-card">
 	<img class="img-fluid img-thumbnail coverimg" src="{{poster_src(item.cover_img_url)}}" alt="{{item.fanhao}}">
 	<div class="tag-body">
@@ -45,7 +46,7 @@
 		% for t in item.tags_dict['star']:
 % actor_state = actor_states.get(t, 'pending')
 % actor_state_label = {'like': '喜欢', 'pending': '待确认', 'dislike': '不喜欢'}.get(actor_state, '待确认')
-			<a class="badge badge-{{'warning' if actor_state == 'like' else 'danger' if actor_state == 'dislike' else 'secondary'}} actor-state-badge" data-actor-state="{{actor_state}}" title="演员偏好：{{actor_state_label}}" aria-label="{{t}}，演员偏好：{{actor_state_label}}" href="{{tag_url('star', t)}}">{{t}}</a>
+			<a class="badge badge-{{'warning' if actor_state == 'like' else 'danger' if actor_state == 'dislike' else 'secondary'}} actor-state-badge" data-actor-id="{{actor_ids.get(t, '')}}" data-actor-state="{{actor_state}}" title="演员偏好：{{actor_state_label}}" aria-label="{{t}}，演员偏好：{{actor_state_label}}" href="{{tag_url('star', t)}}">{{t}}</a>
 		% end
 		</div>
 		<div class="tag-actions">
@@ -73,7 +74,7 @@
 			<summary>演员偏好（{{len(details['actors'])}}）</summary>
 			<div class="small text-muted mt-2">按演员独立记录偏好，不会更改本片标签或喜欢/不喜欢打标。</div>
 % for actor in details['actors']:
-			<form class="v2-control-row v2-actor-row" method="post" action="/v2/actor/{{actor['actor_id']}}">
+			<form class="v2-control-row v2-actor-row" data-actor-id="{{actor['actor_id']}}" method="post" action="/v2/actor/{{actor['actor_id']}}">
 				<input type="hidden" name="csrf" value="{{csrf}}">
 				<input type="hidden" name="return_to" value="{{return_to}}#form-{{i}}">
 				<span class="v2-actor-name">{{actor['name']}}</span>
@@ -82,6 +83,7 @@
 					<button type="submit" name="state" value="{{value}}" class="btn {{button_class}} btn-sm {{'active' if actor['state']==value else ''}}" aria-pressed="{{'true' if actor['state']==value else 'false'}}">{{label}}</button>
 % end
 				</div>
+				<span class="v2-actor-save-status small text-muted" role="status" aria-live="polite"></span>
 			</form>
 % end
 		</details>

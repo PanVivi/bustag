@@ -52,12 +52,15 @@ def test_legacy_tag_template_embeds_v2_controls_without_nested_forms():
         poster_src=lambda url: '', query_url=lambda page: '?page=1',
         tag_url=lambda category, value: '?tag=test', filter_label=None,
         filter_value=None, clear_url='?', v2_items={'SYN-001': detail},
-        csrf='test-csrf', return_to='/tagit')
+        csrf='test-csrf', return_to='/tagit?like=1&tag_type=star&tag=Actor%20A&page=2')
 
     assert '匹配分数 0.990' in page and '模型匹配分数 0.990' in page
     assert 'href="/tagit"' in page
     assert 'action="/tag/SYN-001?page=1"' in page
     assert 'action="/v2/actor/actor-1"' in page
+    assert 'data-actor-id="actor-1"' in page
+    assert 'v2-actor-save-status' in page
+    assert '&amp;tag_type=star' in page
     assert 'name="state" value="like"' in page
     assert 'name="state" value="dislike"' in page
     assert 'name="state" value="pending"' in page

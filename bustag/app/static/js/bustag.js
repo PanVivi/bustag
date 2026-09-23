@@ -73,6 +73,85 @@
     }
 
     $(function () {
+    function actorStateLabel(state) {
+        return state === 'like' ? '喜欢' : (state === 'dislike' ? '不喜欢' : '待确认');
+    }
+
+    function applyActorState(actorId, state) {
+        Array.prototype.forEach.call(document.querySelectorAll('.v2-actor-row[data-actor-id]'), function (form) {
+            if (form.getAttribute('data-actor-id') !== actorId) return;
+            Array.prototype.forEach.call(form.querySelectorAll('button[name="state"]'), function (button) {
+                var selected = button.value === state;
+                button.classList.toggle('active', selected);
+                button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            });
+            form.setAttribute('data-saved-state', state);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.actor-state-badge[data-actor-id]'), function (badge) {
+            if (badge.getAttribute('data-actor-id') !== actorId) return;
+            badge.classList.remove('badge-warning', 'badge-secondary', 'badge-danger');
+            badge.classList.add(state === 'like' ? 'badge-warning' :
+                (state === 'dislike' ? 'badge-danger' : 'badge-secondary'));
+            badge.setAttribute('data-actor-state', state);
+            badge.setAttribute('title', '演员偏好：' + actorStateLabel(state));
+            badge.setAttribute('aria-label', badge.textContent.trim() + '，演员偏好：' + actorStateLabel(state));
+        });
+    }
+
+    $(document).on('click', '.v2-actor-row button[name="state"]', function () {
+        this.form.setAttribute('data-requested-state', this.value);
+    });
+
+    $(document).on('submit', '.v2-actor-row', function (event) {
+        var form = this;
+        var submitter = event.originalEvent && event.originalEvent.submitter;
+        var state = submitter && submitter.name === 'state' ? submitter.value :
+            form.getAttribute('data-requested-state');
+        form.removeAttribute('data-requested-state');
+        if (!state || !window.fetch || !window.FormData) return;
+        event.preventDefault();
+        if (form.getAttribute('data-saving') === 'true') return;
+        form.setAttribute('data-saving', 'true');
+        var buttons = form.querySelectorAll('button[name="state"]');
+        Array.prototype.forEach.call(buttons, function (button) { button.disabled = true; });
+        var status = form.querySelector('.v2-actor-save-status');
+        if (status) {
+            status.classList.remove('text-success', 'text-danger');
+            status.classList.add('text-muted');
+            status.textContent = '保存中…';
+        }
+        var data = new FormData(form);
+        data.append('state', state);
+        fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: data
+        }).then(function (response) {
+            return response.json().then(function (result) {
+                if (!response.ok || !result.ok) throw new Error('Actor preference save failed');
+                return result;
+            });
+        }).then(function (result) {
+            applyActorState(result.actor_id, result.state);
+            if (status) {
+                status.classList.remove('text-muted', 'text-danger');
+                status.classList.add('text-success');
+                status.textContent = '已保存';
+            }
+        }).catch(function () {
+            if (status) {
+                status.classList.remove('text-muted', 'text-success');
+                status.classList.add('text-danger');
+                status.textContent = '保存失败，请重试';
+            }
+        }).then(function () {
+            form.removeAttribute('data-saving');
+            Array.prototype.forEach.call(buttons, function (button) { button.disabled = false; });
+        });
+    });
+
     $('.layout-toggle').on('click', function (event) {
         event.preventDefault();
         var layout = $(this).attr('data-layout-target');

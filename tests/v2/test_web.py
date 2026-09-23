@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import bottle
 from webtest import TestApp
@@ -23,6 +24,13 @@ def test_v2_redirects_to_legacy_and_keeps_single_feedback_source(store, tmp_path
                           status=303)
     assert changed.headers['Location'] == '/tagit?page=2'
     assert store.rows('SELECT state FROM actor_preference')[0]['state'] == 'like'
+    ajax = client.post('/v2/actor/' + actor,
+                       {'state': 'dislike', 'csrf': CSRF, 'return_to': '/tagit?like=1'},
+                       headers={'Accept': 'application/json'}, status=200)
+    assert ajax.headers['Content-Type'].startswith('application/json')
+    assert json.loads(ajax.text) == {'ok': True, 'actor_id': actor, 'state': 'dislike'}
+    assert store.rows('SELECT state FROM actor_preference')[0]['state'] == 'dislike'
+    assert store.rows('SELECT * FROM explicit_work_feedback') == []
     filtered = client.post('/v2/actor/' + actor,
                            {'state': 'pending', 'csrf': CSRF,
                             'return_to': '/tagit?like=1&tag=genre%3Acomedy&page=3#form-7'},
@@ -36,15 +44,23 @@ def test_v2_redirects_to_legacy_and_keeps_single_feedback_source(store, tmp_path
     client.post('/v2/feedback/' + wid, {'value': '0', 'csrf': CSRF}, status=410)
     assert store.rows('SELECT * FROM explicit_work_feedback') == []
     tag_change = client.post('/v2/tag/' + wid + '/' + tag_id,
-                             {'enabled': '0', 'csrf': CSRF, 'return_to': '/tag?like=1'},
+                             {'enabled': '0', 'csrf': CSRF,
+                              'return_to': '/tagit?like=1&tag_type=star&tag=Actor%20A&page=3#form-7'},
                              status=303)
-    assert tag_change.headers['Location'] == '/tag?like=1'
+    assert tag_change.headers['Location'] == '/tagit?like=1&tag_type=star&tag=Actor%20A&page=3#form-7'
     assert store.rows('SELECT enabled FROM tag_override')[0]['enabled'] == 0
+
+    mapping = client.post('/v2/map-tag',
+                          {'csrf': CSRF, 'source': 'fixture', 'category': 'genre',
+                           'source_id': 'g', 'tag_id': tag_id, 'return_to': '/v2/manage?page=4'},
+                          status=303)
+    assert mapping.headers['Location'] == '/v2/manage?page=4'
 
     client.get('/v2/status')
     manage = client.get('/v2/manage')
     assert '作品人工反馈' not in manage.text
     assert '演员人工三态' not in manage.text
+    assert 'name="return_to" value="/v2/manage?page=1"' in manage.text
     client.get('/v2?entry=invalid', status=400)
     client.get('/v2?entry=local&page=abc', status=400)
 

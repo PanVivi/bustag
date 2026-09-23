@@ -1,4 +1,5 @@
 """Bottle routes; CSRF protection on all new manual mutations."""
+import json
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -67,11 +68,17 @@ def install(app, database, models):
     @app.post('/v2/actor/<actor_id>')
     def actor(actor_id):
         csrf()
+        state = request.forms.get('state')
         try:
             with opened() as store:
-                store.preference(actor_id, request.forms.get('state'))
+                store.preference(actor_id, state)
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid actor preference')
+        if ('application/json' in request.headers.get('Accept', '') or
+                request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
+            return HTTPResponse(json.dumps({'ok': True, 'actor_id': actor_id, 'state': state}),
+                                status=200,
+                                headers={'Content-Type': 'application/json; charset=UTF-8'})
         redirect(_safe_return_to('/tagit'), 303)
 
     @app.post('/v2/tag/<work_id>/<tag_id>')
@@ -115,7 +122,7 @@ def install(app, database, models):
                 store.map_tag(*(request.forms.get(k, '') for k in ('source', 'category', 'source_id', 'tag_id')))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid mapping')
-        redirect('/v2/manage', 303)
+        redirect(_safe_return_to('/v2/manage'), 303)
 
     @app.post('/v2/resolve-media')
     def resolve_media():
@@ -125,7 +132,7 @@ def install(app, database, models):
                 store.resolve_media(*(request.forms.get(k, '') for k in ('server', 'item_id', 'work_id')))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid media match')
-        redirect('/v2/manage', 303)
+        redirect(_safe_return_to('/v2/manage'), 303)
 
     @app.post('/v2/merge-actor')
     def merge_actor():
@@ -135,7 +142,7 @@ def install(app, database, models):
                 store.merge_actor(request.forms.get('source_actor', ''), request.forms.get('target_actor', ''))
         except (ValueError, sqlite3.IntegrityError):
             abort(400, 'Invalid actor mapping or conflicting explicit preferences')
-        redirect('/v2/manage', 303)
+        redirect(_safe_return_to('/v2/manage'), 303)
 
     @app.post('/v2/job/<kind>')
     def job(kind):

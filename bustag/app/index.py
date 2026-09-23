@@ -285,7 +285,8 @@ def tagit():
     return template('tagit', items=items, page_info=page_info, like=rate_value,
                     path=request.path, poster_src=poster_src,
                     v2_items=_legacy_v2_details(items), csrf=V2_CSRF,
-                    return_to=request.fullpath,
+                    return_to=request.path + (('?' + request.environ.get('QUERY_STRING', ''))
+                                              if request.environ.get('QUERY_STRING') else ''),
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 

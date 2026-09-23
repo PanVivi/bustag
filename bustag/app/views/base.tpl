@@ -110,6 +110,6 @@
    	<script type="text/javascript" src="/static/js/jquery.min.js"></script>
 	<script type="text/javascript" src="/static/js/popper.min.js"></script>
 	<script type="text/javascript" src="/static/js/bootstrap.min.js"></script>
-	<script type="text/javascript" src="/static/js/bustag.js?v=layout-port2"></script>
+	<script type="text/javascript" src="/static/js/bustag.js?v=actor-ajax-1"></script>
   </body>
 </html>
