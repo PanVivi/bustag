@@ -29,13 +29,14 @@ def test_sync_legacy_items_backfills_new_cards_idempotently_without_overwriting_
     # Simulate the legacy crawler adding a card and its actor/genre tags after V2 migration.
     store.conn.executescript('''
       INSERT INTO item VALUES (2,'SYN-002','New item','/SYN-002');
+      INSERT INTO item VALUES (3,'SYN-003','Another new item','/SYN-003');
       INSERT INTO tag VALUES (2,'star','Actor B','/star/b');
       INSERT INTO tag VALUES (3,'genre','Drama','/genre/drama');
       INSERT INTO item_tag VALUES (2,2);
       INSERT INTO item_tag VALUES (2,3);
       INSERT INTO item_rate VALUES (1,2,1,0,'2026-09-23T10:00:00');
     ''')
-    assert store.sync_legacy_items(['SYN-002']) == 1
+    assert store.sync_missing_legacy_items(batch_size=1) == 2
     assert store.sync_legacy_items(['SYN-002']) == 0
 
     work_id = store.rows("SELECT work_id FROM source_item WHERE source='javbus' AND source_id='SYN-002'")[0]['work_id']

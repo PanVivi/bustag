@@ -207,11 +207,24 @@ def _legacy_v2_details(items):
         if not store.enabled():
             return {}
         codes = [item.fanhao for item in items]
-        added = store.sync_legacy_items(codes)
+        added = store.sync_missing_legacy_items()
         if added:
             logger.info('V2 card-link backfill added %s legacy card(s)', added)
         details = legacy_card_details(store, codes)
+        # Prioritize cards on this page, then repair at most 100 other scores
+        # per visit so a large backlog never makes /tagit unresponsive.
         missing_scores = [detail['work_id'] for detail in details.values() if not detail['has_score']]
+        missing_scores = list(dict.fromkeys(missing_scores))
+        remaining = max(0, 100 - len(missing_scores))
+        if remaining:
+            for row in store.rows('''
+                SELECT w.work_id FROM work_identity w
+                LEFT JOIN v2_recommendation_score s ON s.work_id=w.work_id
+                  AND s.model_version=? AND s.mapping_version=?
+                WHERE s.work_id IS NULL ORDER BY w.work_id LIMIT ?''',
+                (store.meta('active_model', ''), int(store.meta('mapping_version', '0') or 0), remaining)):
+                if row['work_id'] not in missing_scores:
+                    missing_scores.append(row['work_id'])
         if missing_scores and store.meta('active_model'):
             try:
                 from bustag.recommender import model

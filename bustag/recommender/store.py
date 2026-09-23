@@ -388,6 +388,29 @@ class Store:
                 count += 1
         return count
 
+    def sync_missing_legacy_items(self, batch_size=500, max_batches=20):
+        """Backfill all currently unlinked legacy cards in bounded batches."""
+        if type(batch_size) is not int or not 1 <= batch_size <= 500:
+            raise ValueError('batch_size must be between 1 and 500')
+        if type(max_batches) is not int or max_batches < 1:
+            raise ValueError('max_batches must be positive')
+        tables = {row['name'] for row in self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {'item', 'item_tag', 'tag'}.issubset(tables):
+            return 0
+        total = 0
+        for _ in range(max_batches):
+            missing = [row['fanhao'] for row in self.rows('''
+                SELECT i.fanhao FROM item i
+                LEFT JOIN source_item s ON s.source='javbus' AND s.source_id=i.fanhao
+                WHERE s.source_id IS NULL ORDER BY i.id LIMIT ?''', (batch_size,))]
+            if not missing:
+                break
+            added = self.sync_legacy_items(missing)
+            total += added
+            if not added:
+                break
+        return total
+
     def statistics(self):
         result = {table: self.conn.execute('SELECT count(*) FROM ' + table).fetchone()[0]
                   for table in ('work_identity', 'actor', 'source_tag', 'media_copy')}
