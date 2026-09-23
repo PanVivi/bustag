@@ -74,19 +74,49 @@ def test_legacy_tag_card_renders_v2_controls_in_original_style_without_nested_fo
     bottle.TEMPLATE_PATH.insert(0, str(Path(__file__).parents[2] / 'bustag/app/views'))
     item = SimpleNamespace(id=1, fanhao='SYN-001', release_date='2025-01-01',
                            add_date='2025-01-02', title='Synthetic', url='/SYN-001',
-                           cover_img_url='', tags_dict={'genre': ['g'], 'star': ['a']})
+                           cover_img_url='', tags_dict={'genre': ['g'], 'star': ['Actor A', 'Actor C']})
+    item2 = SimpleNamespace(id=2, fanhao='SYN-002', release_date='2025-01-01',
+                            add_date='2025-01-02', title='Synthetic 2', url='/SYN-002',
+                            cover_img_url='', tags_dict={'genre': [], 'star': ['Actor B']})
     detail = {
         'work_id': 'work-1', 'model_current': True, 'model_score': .99,
-        'match_score': .99, 'actors': [{'actor_id': 'actor-1', 'name': 'Actor A', 'state': 'pending'}],
+        'match_score': .99, 'actors': [
+            {'actor_id': 'actor-1', 'name': 'Actor A', 'state': 'pending'},
+            {'actor_id': 'actor-3', 'name': 'Actor C', 'state': 'like'}],
         'tags': [{'tag_id': 'tag-1', 'category': 'genre', 'name': 'Drama', 'enabled': True}],
     }
-    html = bottle.template('tagit', path='/tagit', items=[item], page_info=(1,1,1,10),
+    detail2 = {
+        'work_id': 'work-2', 'model_current': True, 'model_score': .75,
+        'match_score': .75, 'actors': [{'actor_id': 'actor-2', 'name': 'Actor B', 'state': 'dislike'}],
+        'tags': [],
+    }
+    html = bottle.template('tagit', path='/tagit', items=[item, item2], page_info=(1,1,1,10),
                            like=None, poster_src=lambda url: '',
                            query_url=lambda page: '?page=1',
                            tag_url=lambda category, value: '?tag=test',
                            filter_label=None, filter_value=None, clear_url='?',
-                           v2_items={'SYN-001': detail}, csrf='test-csrf', return_to='/tagit')
+                           v2_items={'SYN-001': detail, 'SYN-002': detail2},
+                           csrf='test-csrf', return_to='/tagit')
     assert '匹配分数 0.990' in html and '模型匹配分数 0.990' in html
+    assert 'form-1' in html and 'form-2' in html
+    assert 'data-actor-state="like"' in html and 'badge-warning actor-state-badge' in html
+    assert 'data-actor-state="pending"' in html and 'badge-secondary actor-state-badge' in html
+    assert 'data-actor-state="dislike"' in html and 'badge-danger actor-state-badge' in html
+    assert html.count('<article') == 2 and html.count('</article>') == 2
+    class CardNesting(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.depth = 0; self.nested = False
+        def handle_starttag(self, tag, attrs):
+            if tag == 'article' and 'tag-card' in dict(attrs).get('class', '').split():
+                if self.depth:
+                    self.nested = True
+                self.depth += 1
+        def handle_endtag(self, tag):
+            if tag == 'article':
+                self.depth -= 1
+    cards = CardNesting()
+    cards.feed(html)
+    assert not cards.nested and cards.depth == 0
     assert 'Actor A' in html and '/v2/actor/actor-1' in html
     assert '/v2/tag/work-1/tag-1' in html and '排除误标' in html
     assert 'btn btn-primary btn-sm' in html and 'btn btn-danger btn-sm' in html

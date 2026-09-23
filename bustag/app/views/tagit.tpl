@@ -27,6 +27,7 @@
 % i = 1
 %for item in items:
 % details = v2_items.get(item.fanhao)
+% actor_states = {actor['name']: actor['state'] for actor in details['actors']} if details else {}
 <article id="form-{{i}}" class="tag-card">
 	<img class="img-fluid img-thumbnail coverimg" src="{{poster_src(item.cover_img_url)}}" alt="{{item.fanhao}}">
 	<div class="tag-body">
@@ -42,7 +43,9 @@
 		</div>
 		<div class="tag-badges">
 		% for t in item.tags_dict['star']:
-			<a class="badge badge-warning" href="{{tag_url('star', t)}}">{{t}}</a>
+% actor_state = actor_states.get(t, 'pending')
+% actor_state_label = {'like': '喜欢', 'pending': '待确认', 'dislike': '不喜欢'}.get(actor_state, '待确认')
+			<a class="badge badge-{{'warning' if actor_state == 'like' else 'danger' if actor_state == 'dislike' else 'secondary'}} actor-state-badge" data-actor-state="{{actor_state}}" title="演员偏好：{{actor_state_label}}" aria-label="{{t}}，演员偏好：{{actor_state_label}}" href="{{tag_url('star', t)}}">{{t}}</a>
 		% end
 		</div>
 		<div class="tag-actions">
@@ -96,7 +99,6 @@
 			</form>
 % end
 		</details>
-% end
 % end
 % end
 	</div>
