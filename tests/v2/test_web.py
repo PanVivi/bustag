@@ -40,6 +40,10 @@ def test_v2_redirects_to_legacy_and_keeps_single_feedback_source(store, tmp_path
                            {'state': 'dislike', 'csrf': CSRF, 'return_to': '//evil.example'},
                            status=303)
     assert fallback.headers['Location'] == '/tagit'
+    recommendation_return = client.post('/v2/actor/' + actor,
+                           {'state': 'like', 'csrf': CSRF, 'return_to': '/recommend?like=1&page=2'},
+                           status=303)
+    assert recommendation_return.headers['Location'] == '/recommend?like=1&page=2'
 
     client.post('/v2/feedback/' + wid, {'value': '0', 'csrf': CSRF}, status=410)
     assert store.rows('SELECT * FROM explicit_work_feedback') == []
@@ -66,6 +70,7 @@ def test_v2_redirects_to_legacy_and_keeps_single_feedback_source(store, tmp_path
 
 
 def test_legacy_layout_still_renders_continuous_score():
+    from html.parser import HTMLParser
     from types import SimpleNamespace
     bottle.TEMPLATE_PATH.insert(0, str(Path(__file__).parents[2] / 'bustag/app/views'))
     item = SimpleNamespace(id=1, fanhao='SYN-001', release_date='2025-01-01',
@@ -75,9 +80,30 @@ def test_legacy_layout_still_renders_continuous_score():
     html = bottle.template('index', path='/recommend', msg='', filter_value=None,
                            items=[item], page_info=(1,1,1,10), like=1,
                            poster_src=lambda url: '', query_url=lambda page: '?page=1',
-                           tag_url=lambda category, value: '?tag=test', bustag_layout='single')
+                           tag_url=lambda category, value: '?tag=test', bustag_layout='single',
+                           v2_items={'SYN-001': {'model_current': True, 'match_score': .75,
+                               'actors': [{'actor_id': 'actor-1', 'name': 'a', 'state': 'like'}]}},
+                           csrf='test', return_to='/recommend')
     assert 'layout-single' in html
-    assert '匹配分数 75' in html
+    assert '匹配分数 0.750' in html
+    assert '模型匹配分数' not in html
+    assert 'badge-warning actor-state-badge' in html and 'data-actor-state="like"' in html
+    assert '/v2/actor/actor-1' in html and 'name="state" value="dislike"' in html
+    assert 'name="return_to" value="/recommend#form-1"' in html
+    class FormNesting(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.depth = 0
+        def handle_starttag(self, tag, attrs):
+            if tag == 'form':
+                assert self.depth == 0, 'recommendation forms must be siblings'
+                self.depth += 1
+        def handle_endtag(self, tag):
+            if tag == 'form':
+                self.depth -= 1
+                assert self.depth == 0
+    forms = FormNesting()
+    forms.feed(html)
+    assert forms.depth == 0
     assert '个人推荐 V2' not in html
     assert 'href="/tagit"' in html
     assert '/settings' in html
@@ -113,7 +139,7 @@ def test_legacy_tag_card_renders_v2_controls_in_original_style_without_nested_fo
                            filter_label=None, filter_value=None, clear_url='?',
                            v2_items={'SYN-001': detail, 'SYN-002': detail2},
                            csrf='test-csrf', return_to='/tagit')
-    assert '匹配分数 0.990' in html and '模型匹配分数 0.990' in html
+    assert '匹配分数 0.990' in html and '模型匹配分数' not in html
     assert 'form-1' in html and 'form-2' in html
     assert 'data-actor-state="like"' in html and 'badge-warning actor-state-badge' in html
     assert 'data-actor-state="pending"' in html and 'badge-secondary actor-state-badge' in html
@@ -137,6 +163,8 @@ def test_legacy_tag_card_renders_v2_controls_in_original_style_without_nested_fo
     assert '/v2/tag/work-1/tag-1' in html and '排除误标' in html
     assert 'btn btn-primary btn-sm' in html and 'btn btn-danger btn-sm' in html
     assert '个人推荐 V2' not in html
+    assert '<div class="tag-code-row">' in html
+    assert html.count('匹配分数 0.990') == 1
 
     class FormNesting(HTMLParser):
         def __init__(self):

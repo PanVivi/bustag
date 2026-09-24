@@ -23,7 +23,7 @@ def _safe_return_to(default):
     path = request.forms.get('return_to', '')
     parsed = urlsplit(path)
     if (not path.startswith('/') or path.startswith('//') or parsed.scheme or parsed.netloc or
-            parsed.path not in ('/tag', '/tagit', '/v2/manage') or '\\' in path or
+            parsed.path not in ('/tag', '/tagit', '/recommend', '/v2/manage') or '\\' in path or
             any(ord(char) < 32 for char in path)):
         return default
     return path

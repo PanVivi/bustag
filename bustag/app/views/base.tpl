@@ -13,7 +13,7 @@
     <!-- Bootstrap CSS -->
 	<link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css">
 
-	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=actor-state-and-card-layout-1">
+	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=recommend-card-match-and-actors-1">
 
     <title>{{title or ''}}</title>
   </head>

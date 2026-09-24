@@ -54,7 +54,7 @@ def test_legacy_tag_template_embeds_v2_controls_without_nested_forms():
         filter_value=None, clear_url='?', v2_items={'SYN-001': detail},
         csrf='test-csrf', return_to='/tagit?like=1&tag_type=star&tag=Actor%20A&page=2')
 
-    assert '匹配分数 0.990' in page and '模型匹配分数 0.990' in page
+    assert '匹配分数 0.990' in page and '模型匹配分数' not in page
     assert 'href="/tagit"' in page
     assert 'action="/tag/SYN-001?page=1"' in page
     assert 'action="/v2/actor/actor-1"' in page

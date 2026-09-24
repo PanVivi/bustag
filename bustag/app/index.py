@@ -258,11 +258,15 @@ def index():
         tag_type=tag_type, tag_value=tag_value)
     for item in items:
         _remove_extra_tags(item)
+    v2_items = _legacy_v2_details(items)
     today_update_count = db.get_today_update_count()
     today_recommend_count = db.get_today_recommend_count()
     msg = f'今日更新 {today_update_count} , 今日推荐 {today_recommend_count}'
     return template('index', items=items, page_info=page_info, like=rate_value,
                     path=request.path, msg=msg, poster_src=poster_src,
+                    v2_items=v2_items, csrf=V2_CSRF,
+                    return_to=request.path + (('?' + request.environ.get('QUERY_STRING', ''))
+                                              if request.environ.get('QUERY_STRING') else ''),
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 

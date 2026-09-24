@@ -35,7 +35,18 @@
 		<div class="small text-muted">id: {{item.id}}</div>
 		<div class="small text-muted">发行日期: {{item.release_date}}</div>
 		<div class="small text-muted">添加日期: {{item.add_date}}</div>
-		<h6 class="tag-fanhao">{{item.fanhao}}</h6>
+		<div class="tag-code-row">
+			<h6 class="tag-fanhao">{{item.fanhao}}</h6>
+% if details:
+			<div class="v2-scoreline small">
+% if details['model_current']:
+				<span class="badge badge-info">匹配分数 {{'%.3f' % details['match_score']}}</span>
+% else:
+				<span class="badge badge-secondary">模型待训练或重评分</span>
+% end
+			</div>
+% end
+		</div>
 		<a class="tag-title" href="{{item.url}}" target="_blank">{{item.title}}</a>
 		<div class="tag-badges">
 		% for t in item.tags_dict['genre']:
@@ -61,14 +72,6 @@
 			</form>
 		</div>
 % if details:
-		<div class="v2-scoreline small">
-% if details['model_current']:
-			<span class="badge badge-info">匹配分数 {{'%.3f' % details['match_score']}}</span>
-			<span class="text-muted ml-1">模型匹配分数 {{'%.3f' % details['model_score']}}</span>
-% else:
-			<span class="badge badge-secondary">模型待训练或重评分</span>
-% end
-		</div>
 % if details['actors']:
 		<details class="v2-card-tools v2-actor-tools">
 			<summary>演员偏好（{{len(details['actors'])}}）</summary>
