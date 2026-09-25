@@ -53,7 +53,18 @@
 		% for t in item.tags_dict['star']:
 % actor_state = actor_states.get(t, 'pending')
 % actor_state_label = {'like': '喜欢', 'pending': '待确认', 'dislike': '不喜欢'}.get(actor_state, '待确认')
-			<a class="badge badge-{{'warning' if actor_state == 'like' else 'danger' if actor_state == 'dislike' else 'secondary'}} actor-state-badge" data-actor-id="{{actor_ids.get(t, '')}}" data-actor-state="{{actor_state}}" title="演员偏好：{{actor_state_label}}" aria-label="{{t}}，演员偏好：{{actor_state_label}}" href="{{tag_url('star', t)}}">{{t}}</a>
+			<span class="actor-tag-item">
+				<a class="badge badge-{{'warning' if actor_state == 'like' else 'danger' if actor_state == 'dislike' else 'secondary'}} actor-state-badge" data-actor-id="{{actor_ids.get(t, '')}}" data-actor-state="{{actor_state}}" title="演员偏好：{{actor_state_label}}" aria-label="{{t}}，演员偏好：{{actor_state_label}}" href="{{tag_url('star', t)}}">{{t}}</a>
+% if actor_state == 'pending' and actor_ids.get(t):
+				<form class="actor-quick-form" data-actor-id="{{actor_ids.get(t)}}" method="post" action="/v2/actor/{{actor_ids.get(t)}}">
+					<input type="hidden" name="csrf" value="{{csrf}}">
+					<input type="hidden" name="return_to" value="{{return_to}}#form-{{i}}">
+					<button type="submit" class="actor-quick-btn actor-quick-like" name="state" value="like" title="喜欢 {{t}}" aria-label="喜欢 {{t}}">♥</button>
+					<button type="submit" class="actor-quick-btn actor-quick-dislike" name="state" value="dislike" title="不喜欢 {{t}}" aria-label="不喜欢 {{t}}">👎</button>
+					<span class="actor-quick-status sr-only" role="status" aria-live="polite"></span>
+				</form>
+% end
+			</span>
 		% end
 		</div>
 		<div class="tag-actions">

@@ -96,6 +96,62 @@ body.layout-double .item-grid {
   white-space: normal;
 }
 
+.actor-tag-item {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 4px 4px 0;
+}
+
+.actor-tag-item .actor-state-badge {
+  margin: 0 2px 0 0;
+}
+
+.actor-quick-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.actor-quick-form[hidden] {
+  display: none;
+}
+
+.actor-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #ced4da;
+  border-radius: 50%;
+  background: #fff;
+  color: #495057;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.actor-quick-like {
+  color: #b8860b;
+}
+
+.actor-quick-dislike {
+  color: #dc3545;
+}
+
+.actor-quick-btn:hover,
+.actor-quick-btn:focus {
+  border-color: currentColor;
+  outline: 2px solid rgba(0, 123, 255, .2);
+}
+
+.actor-quick-btn:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
 .tag-actions {
   padding-top: 8px;
 }

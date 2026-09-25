@@ -13,7 +13,7 @@
     <!-- Bootstrap CSS -->
 	<link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css">
 
-	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=recommend-card-match-and-actors-1">
+	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=actor-quick-buttons-1">
 
     <title>{{title or ''}}</title>
   </head>
@@ -110,6 +110,6 @@
    	<script type="text/javascript" src="/static/js/jquery.min.js"></script>
 	<script type="text/javascript" src="/static/js/popper.min.js"></script>
 	<script type="text/javascript" src="/static/js/bootstrap.min.js"></script>
-	<script type="text/javascript" src="/static/js/bustag.js?v=actor-ajax-1"></script>
+	<script type="text/javascript" src="/static/js/bustag.js?v=actor-quick-buttons-1"></script>
   </body>
 </html>

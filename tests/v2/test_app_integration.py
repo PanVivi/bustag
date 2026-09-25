@@ -54,6 +54,7 @@ assert 'badge-warning actor-state-badge' in recommendation.text
 assert 'data-actor-state="like"' in recommendation.text
 assert '/v2/actor/' in recommendation.text
 assert 'name="state" value="like"' in recommendation.text
+assert 'actor-quick-form' not in recommendation.text  # already-liked actors have no shortcuts
 assert 'name="return_to" value="/recommend#form-1"' in recommendation.text
 assert 'name="submit" class="btn btn-primary btn-sm" value="1">正确' in recommendation.text
 assert 'action="/correct/SYN-025' in recommendation.text

@@ -160,6 +160,12 @@ def test_legacy_tag_card_renders_v2_controls_in_original_style_without_nested_fo
     cards.feed(html)
     assert not cards.nested and cards.depth == 0
     assert 'Actor A' in html and '/v2/actor/actor-1' in html
+    assert 'class="actor-quick-form" data-actor-id="actor-1"' in html
+    assert html.count('class="actor-quick-btn ') == 2
+    assert 'name="state" value="like"' in html and 'name="state" value="dislike"' in html
+    assert 'actor-quick-form" data-actor-id="actor-2"' not in html
+    assert 'actor-quick-form" data-actor-id="actor-3"' not in html
+    assert 'name="return_to" value="/tagit#form-1"' in html
     assert '/v2/tag/work-1/tag-1' in html and '排除误标' in html
     assert 'btn btn-primary btn-sm' in html and 'btn btn-danger btn-sm' in html
     assert '个人推荐 V2' not in html

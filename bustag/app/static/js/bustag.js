@@ -96,13 +96,18 @@
             badge.setAttribute('title', '演员偏好：' + actorStateLabel(state));
             badge.setAttribute('aria-label', badge.textContent.trim() + '，演员偏好：' + actorStateLabel(state));
         });
+        Array.prototype.forEach.call(document.querySelectorAll('.actor-quick-form[data-actor-id]'), function (form) {
+            if (form.getAttribute('data-actor-id') !== actorId) return;
+            form.hidden = state !== 'pending';
+            form.setAttribute('data-saved-state', state);
+        });
     }
 
-    $(document).on('click', '.v2-actor-row button[name="state"]', function () {
+    $(document).on('click', '.v2-actor-row button[name="state"], .actor-quick-form button[name="state"]', function () {
         this.form.setAttribute('data-requested-state', this.value);
     });
 
-    $(document).on('submit', '.v2-actor-row', function (event) {
+    $(document).on('submit', '.v2-actor-row, .actor-quick-form', function (event) {
         var form = this;
         var submitter = event.originalEvent && event.originalEvent.submitter;
         var state = submitter && submitter.name === 'state' ? submitter.value :
@@ -114,7 +119,7 @@
         form.setAttribute('data-saving', 'true');
         var buttons = form.querySelectorAll('button[name="state"]');
         Array.prototype.forEach.call(buttons, function (button) { button.disabled = true; });
-        var status = form.querySelector('.v2-actor-save-status');
+        var status = form.querySelector('.v2-actor-save-status, .actor-quick-status');
         if (status) {
             status.classList.remove('text-success', 'text-danger');
             status.classList.add('text-muted');
