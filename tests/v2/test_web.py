@@ -162,6 +162,8 @@ def test_legacy_tag_card_renders_v2_controls_in_original_style_without_nested_fo
     assert 'Actor A' in html and '/v2/actor/actor-1' in html
     assert 'class="actor-quick-form" data-actor-id="actor-1"' in html
     assert html.count('class="actor-quick-btn ') == 2
+    assert html.count('😍') == 1 and html.count('😱') == 1
+    assert '♥' not in html and '👎' not in html
     assert 'name="state" value="like"' in html and 'name="state" value="dislike"' in html
     assert 'actor-quick-form" data-actor-id="actor-2"' not in html
     assert 'actor-quick-form" data-actor-id="actor-3"' not in html

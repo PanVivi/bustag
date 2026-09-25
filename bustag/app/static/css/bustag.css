@@ -133,12 +133,18 @@ body.layout-double .item-grid {
   cursor: pointer;
 }
 
+.actor-quick-btn {
+  font-size: 16px;
+}
+
 .actor-quick-like {
-  color: #b8860b;
+  background: #fff1f2;
+  border-color: #fecdd3;
 }
 
 .actor-quick-dislike {
-  color: #dc3545;
+  background: #f3f4ff;
+  border-color: #dadaff;
 }
 
 .actor-quick-btn:hover,

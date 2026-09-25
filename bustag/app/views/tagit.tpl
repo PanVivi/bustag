@@ -63,8 +63,8 @@
 				<form class="actor-quick-form" data-actor-id="{{actor_ids.get(t)}}" method="post" action="/v2/actor/{{actor_ids.get(t)}}">
 					<input type="hidden" name="csrf" value="{{csrf}}">
 					<input type="hidden" name="return_to" value="{{return_to}}#form-{{i}}">
-					<button type="submit" class="actor-quick-btn actor-quick-like" name="state" value="like" title="喜欢 {{t}}" aria-label="喜欢 {{t}}">♥</button>
-					<button type="submit" class="actor-quick-btn actor-quick-dislike" name="state" value="dislike" title="不喜欢 {{t}}" aria-label="不喜欢 {{t}}">👎</button>
+					<button type="submit" class="actor-quick-btn actor-quick-like" name="state" value="like" title="喜欢 {{t}}" aria-label="喜欢 {{t}}">😍</button>
+					<button type="submit" class="actor-quick-btn actor-quick-dislike" name="state" value="dislike" title="不喜欢 {{t}}" aria-label="不喜欢 {{t}}">😱</button>
 					<span class="actor-quick-status sr-only" role="status" aria-live="polite"></span>
 				</form>
 % end
