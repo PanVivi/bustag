@@ -62,6 +62,17 @@ body.layout-double .item-grid {
   margin-bottom: 2px;
 }
 
+.tag-code-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-code-row .tag-fanhao {
+  margin: 0;
+}
+
 .tag-title {
   display: block;
   font-size: 14px;
@@ -83,6 +94,68 @@ body.layout-double .item-grid {
 .tag-badges .badge {
   margin: 0 4px 4px 0;
   white-space: normal;
+}
+
+.actor-tag-item {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 4px 4px 0;
+}
+
+.actor-tag-item .actor-state-badge {
+  margin: 0 2px 0 0;
+}
+
+.actor-quick-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.actor-quick-form[hidden] {
+  display: none;
+}
+
+.actor-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #ced4da;
+  border-radius: 50%;
+  background: #fff;
+  color: #495057;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.actor-quick-btn {
+  font-size: 16px;
+}
+
+.actor-quick-like {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+
+.actor-quick-dislike {
+  background: #f3f4ff;
+  border-color: #dadaff;
+}
+
+.actor-quick-btn:hover,
+.actor-quick-btn:focus {
+  border-color: currentColor;
+  outline: 2px solid rgba(0, 123, 255, .2);
+}
+
+.actor-quick-btn:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 .tag-actions {
@@ -124,4 +197,68 @@ body.layout-double .item-grid {
 }
 .queue-recent {
   color: #bbb;
+}
+
+/* Keep V2 scoring and correction controls within the original tag-card style. */
+.v2-scoreline {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.v2-card-tools {
+  margin-top: 6px;
+  color: #495057;
+  font-size: 13px;
+}
+
+.v2-card-tools > summary {
+  color: #007bff;
+  cursor: pointer;
+  outline: none;
+}
+
+.v2-control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 4px 0;
+  border-bottom: 1px solid #f3f3f3;
+}
+
+.v2-actor-name {
+  min-width: 96px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.v2-actor-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.v2-actor-buttons .btn {
+  min-width: 62px;
+}
+
+.v2-actor-buttons .btn.active {
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .18);
+  font-weight: 700;
+}
+
+.v2-tag-tools {
+  margin-top: 4px;
+}
+
+@media (max-width: 575.98px) {
+  .v2-actor-row {
+    align-items: flex-start;
+  }
+
+  .v2-actor-buttons {
+    flex: 1 1 100%;
+  }
 }

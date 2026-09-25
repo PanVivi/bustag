@@ -1,3 +1,6 @@
+% if not defined('bustag_layout'):
+% bustag_layout = 'double'
+% end
 <!doctype html>
 <html lang="en">
   <head>
@@ -10,7 +13,7 @@
     <!-- Bootstrap CSS -->
 	<link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css">
 
-	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=queue1">
+	<link rel="stylesheet" type="text/css" href="/static/css/bustag.css?v=actor-quick-buttons-3">
 
     <title>{{title or ''}}</title>
   </head>
@@ -32,7 +35,7 @@
       <li class="nav-item {{ 'active' if path in ('/', '/recommend') else ''}}">
         <a class="nav-link" href="/recommend">推荐 <span class="sr-only">(current)</span></a>
       </li>
-      <li class="nav-item {{ 'active' if path=='/tagit' else ''}}">
+      <li class="nav-item {{ 'active' if path in ('/tag','/tagit') else ''}}">
         <a class="nav-link" href="/tagit">打标</a>
       </li>
       <li class="nav-item {{ 'active' if path=='/local' else ''}}">
@@ -107,6 +110,6 @@
    	<script type="text/javascript" src="/static/js/jquery.min.js"></script>
 	<script type="text/javascript" src="/static/js/popper.min.js"></script>
 	<script type="text/javascript" src="/static/js/bootstrap.min.js"></script>
-	<script type="text/javascript" src="/static/js/bustag.js?v=layout-port2"></script>
+	<script type="text/javascript" src="/static/js/bustag.js?v=actor-quick-buttons-3"></script>
   </body>
 </html>

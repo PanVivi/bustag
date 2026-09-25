@@ -1,0 +1,9 @@
+# Isolated acceptance image only. This does not replace or deploy the NAS image.
+FROM python:3.10.16-slim
+WORKDIR /code
+COPY requirements-v2-test.txt .
+RUN pip install --no-cache-dir -r requirements-v2-test.txt
+COPY bustag ./bustag
+COPY tests/v2 ./tests/v2
+RUN python -c "import bustag.recommender.store as s; assert s.__file__.startswith('/code/bustag/')"
+CMD ["python", "-m", "pytest", "tests/v2", "-q"]

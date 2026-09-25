@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 import threading
 import traceback
 import sys
@@ -11,10 +12,12 @@ import re as _re
 import bottle
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urljoin, urlparse
-from bustag.util import APP_CONFIG
+from bustag.util import APP_CONFIG, get_now_time
 from bustag.app.crawl_queue import snapshot as queue_snapshot, enqueue_front, make_item
 from multiprocessing import freeze_support
 from bottle import route, run, template, static_file, request, response, redirect, hook
+
+logger = logging.getLogger(__name__)
 
 dirname = os.path.dirname(os.path.realpath(__file__))
 if getattr(sys, 'frozen', False):
@@ -194,7 +197,56 @@ def _remove_extra_tags(item):
         tags_dict[t] = tags_dict[t][:limit]
 
 
+def _legacy_v2_details(items):
+    """Fail open: V2 decoration must never take down the legacy tag page."""
+    from bustag.recommender.ranking import legacy_card_details
+    from bustag.recommender.store import Store
+    store = None
+    try:
+        store = Store(get_data_path('bus.db'))
+        if not store.enabled():
+            return {}
+        codes = [item.fanhao for item in items]
+        added = store.sync_missing_legacy_items()
+        if added:
+            logger.info('V2 card-link backfill added %s legacy card(s)', added)
+        details = legacy_card_details(store, codes)
+        # Prioritize cards on this page, then repair at most 100 other scores
+        # per visit so a large backlog never makes /tagit unresponsive.
+        missing_scores = [detail['work_id'] for detail in details.values() if not detail['has_score']]
+        missing_scores = list(dict.fromkeys(missing_scores))
+        remaining = max(0, 100 - len(missing_scores))
+        if remaining:
+            for row in store.rows('''
+                SELECT w.work_id FROM work_identity w
+                LEFT JOIN v2_recommendation_score s ON s.work_id=w.work_id
+                  AND s.model_version=? AND s.mapping_version=?
+                WHERE s.work_id IS NULL ORDER BY w.work_id LIMIT ?''',
+                (store.meta('active_model', ''), int(store.meta('mapping_version', '0') or 0), remaining)):
+                if row['work_id'] not in missing_scores:
+                    missing_scores.append(row['work_id'])
+        if missing_scores and store.meta('active_model'):
+            try:
+                from bustag.recommender import model
+                bundle = model.load(store, get_data_path('model/final-v2'))
+                model.rescore_work_ids(store, bundle, missing_scores)
+                details = legacy_card_details(store, codes)
+            except Exception as error:
+                logger.warning('V2 score refresh deferred (%s)', type(error).__name__)
+        return details
+    except Exception as error:
+        logger.warning('V2 tag-card enrichment unavailable (%s)', type(error).__name__)
+        return {}
+    finally:
+        if store is not None:
+            store.close()
+
+
 @route('/')
+def home():
+    return _safe_redirect('/tag')
+
+
 @route('/recommend')
 def index():
     rate_type = RATE_TYPE.SYSTEM_RATE.value
@@ -206,14 +258,19 @@ def index():
         tag_type=tag_type, tag_value=tag_value)
     for item in items:
         _remove_extra_tags(item)
+    v2_items = _legacy_v2_details(items)
     today_update_count = db.get_today_update_count()
     today_recommend_count = db.get_today_recommend_count()
     msg = f'今日更新 {today_update_count} , 今日推荐 {today_recommend_count}'
     return template('index', items=items, page_info=page_info, like=rate_value,
                     path=request.path, msg=msg, poster_src=poster_src,
+                    v2_items=v2_items, csrf=V2_CSRF,
+                    return_to=request.path + (('?' + request.environ.get('QUERY_STRING', ''))
+                                              if request.environ.get('QUERY_STRING') else ''),
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 
+@route('/tag')
 @route('/tagit')
 def tagit():
     rate_value = request.query.get('like', None)
@@ -231,6 +288,9 @@ def tagit():
         _remove_extra_tags(item)
     return template('tagit', items=items, page_info=page_info, like=rate_value,
                     path=request.path, poster_src=poster_src,
+                    v2_items=_legacy_v2_details(items), csrf=V2_CSRF,
+                    return_to=request.path + (('?' + request.environ.get('QUERY_STRING', ''))
+                                              if request.environ.get('QUERY_STRING') else ''),
                     **_list_template_args(rate_value, tag_type, tag_value))
 
 
@@ -245,7 +305,9 @@ def tag(fanhao):
             ItemRate.saveit(rate_type, rate_value, fanhao)
             logger.debug(f'add new item_rate for fanhao:{fanhao}')
         else:
+            item_rate.rate_type = RATE_TYPE.USER_RATE
             item_rate.rate_value = rate_value
+            item_rate.rete_time = get_now_time()
             item_rate.save()
             logger.debug(f'updated item_rate for fanhao:{fanhao}')
     page = int(request.query.get('page', 1))
@@ -269,6 +331,7 @@ def correct(fanhao):
                 rate_value = item_rate.rate_value
                 rate_value = 1 if rate_value == 0 else 0
                 item_rate.rate_value = rate_value
+            item_rate.rete_time = get_now_time()
             item_rate.save()
             logger.debug(
                 f'updated item fanhao: {fanhao}, {"and correct the rate_value" if not is_correct else ""}')
@@ -283,6 +346,8 @@ def correct(fanhao):
 
 @route('/model')
 def other_settings():
+    if _v2_enabled():
+        return _safe_redirect('/v2/status')
     try:
         _, model_scores = clf.load()
     except FileNotFoundError:
@@ -292,6 +357,8 @@ def other_settings():
 
 @route('/do-training')
 def do_training():
+    if _v2_enabled():
+        return _safe_redirect('/v2/status')
     error_msg = None
     model_scores = None
     try:
@@ -516,6 +583,20 @@ def about():
 
 
 app = bottle.default_app()
+
+# Routes remain disabled until the explicit, backed-up additive migration.
+from bustag.recommender.web import CSRF as V2_CSRF, install as install_v2
+from bustag.util import get_data_path
+install_v2(app, get_data_path('bus.db'), get_data_path('model/final-v2'))
+
+
+def _v2_enabled():
+    from bustag.recommender.store import Store
+    store = Store(get_data_path('bus.db'))
+    try:
+        return store.enabled()
+    finally:
+        store.close()
 
 
 def start_app():

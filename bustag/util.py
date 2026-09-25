@@ -16,6 +16,11 @@ DEFAULT_CONFIG = {
     'download': {
         'count': 100,
         'interval': 3600
+    },
+    'recommend': {
+        'threshold': 0.50,
+        'half_life_days': 365,
+        'min_time_weight': 0.25
     }
 }
 
